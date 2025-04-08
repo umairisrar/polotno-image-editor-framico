@@ -72,15 +72,28 @@ const borderElement = page.addElement({
   visible: false,
 });
 
-// Add new image wrap element
-const imageWrapElement = page.addElement({
+// Add new blur overlay element
+const blurOverlay = page.addElement({
   type: "image",
   width: store.width,
   height: store.height,
   selectable: false,
   alwaysOnTop: true,
-  showInExport: true,
-  name: "imageWrapElement",
+  showInExport: false,
+  name: "blurOverlay",
+  visible: false,
+});
+
+// Add new image wrap element following documentation
+const imageWrapElement = page.addElement({
+  type: 'image',
+  src: '', // Will be set dynamically
+  width: store.width,
+  height: store.height,
+  selectable: false,
+  alwaysOnTop: true,
+  showInExport: false,
+  name: 'imageWrap',
   visible: false,
 });
 
@@ -197,9 +210,15 @@ async function generateMirrorWrap() {
 
   // Optional: visualize the "inner" area with a rectangle (comment out if not needed)
   ctx.rect(PADDING, PADDING, innerContent.width, innerContent.height);
-  ctx.strokeStyle = "black";
-  ctx.lineWidth = 5;
-  ctx.stroke();
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]); // Create dashed line
+  ctx.strokeRect(
+    PADDING,
+    PADDING,
+    store.width - PADDING * 2,
+    store.height - PADDING * 2
+  );
 
   // Restore the border and image wrap visibility if they were visible before
   if (borderWasVisible) {
@@ -242,23 +261,49 @@ const applyBorder = (color, width) => {
   });
 };
 
-// New function to create image wrap effect
+// Comment out the old applyImageWrap function
+/*
 async function applyImageWrap() {
-  // Fixed values
-  const padding = 100;
-  const blurAmount = 10;
-  const darkening = 100;
+  // ... existing code ...
+}
+*/
 
-  // First, temporarily hide other effects
-  const mirrorWasVisible = mirrorWrap.visible;
-  const borderWasVisible = borderElement.visible;
+// New simplified image wrap function based on documentation
+async function applyImageWrap() {
+  // Create a canvas for the wrap effect
+  const canvas = document.createElement('canvas');
+  canvas.width = store.width;
+  canvas.height = store.height;
+  const ctx = canvas.getContext('2d');
 
-  if (mirrorWasVisible) {
-    mirrorWrap.set({ visible: false });
-  }
-  if (borderWasVisible) {
-    borderElement.set({ visible: false });
-  }
+  // Draw a dashed red rectangle as the wrap
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]); // Create dashed line
+  ctx.strokeRect(
+    PADDING,
+    PADDING,
+    store.width - PADDING * 2,
+    store.height - PADDING * 2
+  );
+
+  // Convert to data URL
+  const wrapDataUrl = canvas.toDataURL();
+
+  // Apply to the image wrap element
+  imageWrapElement.set({
+    src: wrapDataUrl,
+    visible: true
+  });
+}
+
+// Function to apply blur overlay
+async function applyBlurOverlay() {
+  // Create a canvas for the blur effect
+  const canvas = document.createElement('canvas');
+  canvas.width = store.width;
+  canvas.height = store.height;
+  const ctx = canvas.getContext('2d');
 
   // Get the current canvas content
   const content = await store.toDataURL();
@@ -268,59 +313,30 @@ async function applyImageWrap() {
     img.src = content;
   });
 
-  // Create the image wrap effect
-  const canvas = document.createElement("canvas");
-  canvas.width = store.width;
-  canvas.height = store.height;
-  const ctx = canvas.getContext("2d");
-
-  // Draw the full image as the background (this will be blurred)
+  // Draw the full image
   ctx.drawImage(imageContent, 0, 0);
 
   // Apply blur to the entire canvas
-  ctx.filter = `blur(${blurAmount}px) brightness(${darkening}%)`;
+  ctx.filter = 'blur(15px)';
   ctx.drawImage(imageContent, 0, 0);
-  ctx.filter = "none";
+  ctx.filter = 'none';
 
   // Clear the center rectangle (non-blurred area)
   ctx.clearRect(
-    padding,
-    padding,
-    canvas.width - padding * 2,
-    canvas.height - padding * 2
+    PADDING,
+    PADDING,
+    store.width - PADDING * 2,
+    store.height - PADDING * 2
   );
 
-  // Draw a border around the clear area
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(
-    padding,
-    padding,
-    canvas.width - padding * 2,
-    canvas.height - padding * 2
-  );
+  // Convert to data URL
+  const blurDataUrl = canvas.toDataURL();
 
-  const imageWrapDataUrl = canvas.toDataURL();
-
-  // Apply the image wrap
-  imageWrapElement.set({
-    src: imageWrapDataUrl,
-    width: store.width,
-    height: store.height,
-    visible: true,
+  // Apply to the blur overlay element
+  blurOverlay.set({
+    src: blurDataUrl,
+    visible: true
   });
-
-  // Restore other effects if they were visible
-  if (mirrorWasVisible) {
-    setTimeout(() => {
-      mirrorWrap.set({ visible: true });
-    }, 100);
-  }
-  if (borderWasVisible) {
-    setTimeout(() => {
-      borderElement.set({ visible: true });
-    }, 100);
-  }
 }
 
 // Function to resize canvas and scale all elements proportionally
@@ -414,6 +430,18 @@ const requestUpdateWrap = () => {
   }, 300);
 };
 
+// New function to update image wrap and blur overlay
+const requestUpdateImageWrap = () => {
+  if (timeout || skipChange) {
+    return;
+  }
+  timeout = setTimeout(() => {
+    timeout = null;
+    applyImageWrap();
+    applyBlurOverlay();
+  }, 300);
+};
+
 // Handle store changes
 store.on("change", () => {
   if (skipChange) {
@@ -426,7 +454,7 @@ store.on("change", () => {
   }
 
   if (imageWrapElement.visible) {
-    // We'll handle this in the CustomToolbar component when slider values change
+    requestUpdateImageWrap();
   }
 });
 
@@ -445,6 +473,7 @@ const CustomToolbar = ({ store }) => {
     mirrorWrap.set({ visible: false });
     borderElement.set({ visible: false });
     imageWrapElement.set({ visible: false });
+    blurOverlay.set({ visible: false });
 
     if (newOption === "mirror") {
       generateMirrorWrap().then((url) => {
@@ -458,9 +487,10 @@ const CustomToolbar = ({ store }) => {
       applyBorder(borderColor, borderWidth);
       skipChange = false;
     } else if (newOption === "imageWrap") {
-      applyImageWrap().then(() => {
-        skipChange = false;
-      });
+      // Apply initial effects
+      applyImageWrap();
+      applyBlurOverlay();
+      skipChange = false;
     } else {
       skipChange = false;
     }
@@ -524,24 +554,7 @@ const CustomToolbar = ({ store }) => {
         style={{ display: "flex", alignItems: "center", marginBottom: "10px" }}
       >
         <Toolbar store={store} downloadButtonEnabled />
-        <div
-          style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}
-        >
-          <RadioGroup
-            inline
-            onChange={handleSizeChange}
-            selectedValue={canvasSize}
-            label="Canvas Size (inches):"
-          >
-            <Radio label="8 × 10" value="8x10" />
-            <Radio label="9 × 9" value="9x9" />
-            <Radio label="12 × 12" value="12x12" />
-            {/* <Radio label="14 × 14" value="14x14" />
-            <Radio label="16 × 16" value="16x16" />
-            <Radio label="18 × 18" value="18x18" />
-            <Radio label="20 × 20" value="20x20" /> */}
-          </RadioGroup>
-        </div>
+        
       </div>
       <div style={{ display: "flex", alignItems: "center" }}>
         <RadioGroup
@@ -555,6 +568,24 @@ const CustomToolbar = ({ store }) => {
           <Radio label="Solid Border" value="border" />
           <Radio label="Image Wrap" value="imageWrap" />
         </RadioGroup>
+        <div
+          style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}
+        >
+          <RadioGroup
+            inline
+            onChange={handleSizeChange}
+            selectedValue={canvasSize}
+            label="Canvas Size (inches):"
+          >
+            <Radio label="1 × 2" value="8x10" />
+            <Radio label="9 × 9" value="9x9" />
+            <Radio label="12 × 12" value="12x12" />
+            <Radio label="14 × 14" value="14x14" />
+            <Radio label="16 × 16" value="16x16" />
+            <Radio label="18 × 18" value="18x18" />
+            <Radio label="20 × 20" value="20x20" />
+          </RadioGroup>
+        </div>
         {selectedOption === "border" && (
           <div
             style={{
@@ -609,13 +640,21 @@ export const App = ({ store }) => {
   return (
     <PolotnoContainer style={{ width: "100vw", height: "100vh" }}>
       <SidePanelWrap>
-        <SidePanel store={store} />
+        {/* <SidePanel store={store} /> */}
       </SidePanelWrap>
       <WorkspaceWrap>
         <CustomToolbar store={store} />
-        <Workspace store={store} />
+        <Workspace 
+          store={store} 
+          components={{
+            ContextMenu: () => null, // Disable right-click context menu
+            PageControls: () => null, // Disable page controls
+          }}
+          altCloneEnabled={false} // Disable alt+drag to clone
+          disableAddLayer={true} // Disable add layer feature
+          disablePageControls={true} // Disable page controls
+        />
         <ZoomButtons store={store} />
-        <PagesTimeline store={store} />
       </WorkspaceWrap>
     </PolotnoContainer>
   );
