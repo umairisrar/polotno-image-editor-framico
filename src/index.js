@@ -25,14 +25,18 @@ import { createStore } from "polotno/model/store";
 // Define DPI constant (300 is standard print quality)
 const DPI = 300;
 
-// Define canvas sizes in inches and convert to pixels
+// Define border width in inches
+const BORDER_WIDTH_INCHES = 0.75;
+const BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
+
+// Define canvas sizes in inches and convert to pixels for the INNER area
 const CANVAS_SIZES = {
-  "8x10": { width: 8 * DPI, height: 10 * DPI },
-  "9x9": { width: 9 * DPI, height: 9 * DPI },
+  "8x10":  { width: 8  * DPI, height: 10 * DPI },
+  "9x9":   { width: 9  * DPI, height: 9  * DPI },
   "12x12": { width: 12 * DPI, height: 12 * DPI },
   "10x16": { width: 10 * DPI, height: 16 * DPI },
   "14x14": { width: 14 * DPI, height: 14 * DPI },
-  "16x16": { width: 16 * DPI, height: 16 * DPI },
+  "16x20": { width: 16 * DPI, height: 20 * DPI },
   "18x18": { width: 18 * DPI, height: 18 * DPI },
   "20x20": { width: 20 * DPI, height: 20 * DPI },
 };
@@ -40,11 +44,22 @@ const CANVAS_SIZES = {
 // Default canvas size
 const DEFAULT_SIZE = "8x10";
 
+// Function to get the total size including border
+const getTotalSize = (innerSize) => {
+  return {
+    width: innerSize.width + 2 * BORDER_WIDTH_PIXELS,
+    height: innerSize.height + 2 * BORDER_WIDTH_PIXELS
+  };
+};
+
+// Use total size (inner + border) for the store
+const totalDefaultSize = getTotalSize(CANVAS_SIZES[DEFAULT_SIZE]);
+
 const store = createStore({
   key: "nFA5H9elEytDyPyvKL7T", // Replace with your Polotno key
   showCredit: true,
-  width: CANVAS_SIZES[DEFAULT_SIZE].width,
-  height: CANVAS_SIZES[DEFAULT_SIZE].height,
+  width: totalDefaultSize.width,
+  height: totalDefaultSize.height,
 });
 
 const page = store.addPage();
@@ -97,7 +112,8 @@ const imageWrapElement = page.addElement({
   visible: false,
 });
 
-const PADDING = 100;
+// Update PADDING to use the new border width constant
+const PADDING = BORDER_WIDTH_PIXELS;
 
 async function generateMirrorWrap() {
   // First check if borderElement is defined
@@ -220,6 +236,16 @@ async function generateMirrorWrap() {
     store.height - PADDING * 2
   );
 
+  // Add "Sides" text labels
+  ctx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
+  ctx.fillStyle = 'black';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Top side
+  ctx.fillText('Sides', canvas.width / 2, PADDING / 2);
+  // Bottom side
+ 
   // Restore the border and image wrap visibility if they were visible before
   if (borderWasVisible) {
     setTimeout(() => {
@@ -236,8 +262,9 @@ async function generateMirrorWrap() {
   return canvas.toDataURL();
 }
 
+// Update applyBorder to use the border width as default
 const applyBorder = (color, width) => {
-  const borderWidth = width || 20;
+  const borderWidth = width || BORDER_WIDTH_PIXELS;
   const canvas = document.createElement("canvas");
   canvas.width = store.width;
   canvas.height = store.height;
@@ -317,9 +344,16 @@ async function applyBlurOverlay() {
   ctx.drawImage(imageContent, 0, 0);
 
   // Apply blur to the entire canvas
-  ctx.filter = 'blur(15px)';
+  ctx.filter = 'blur(7px)';
   ctx.drawImage(imageContent, 0, 0);
   ctx.filter = 'none';
+  
+  // Add text with DPI-adjusted font size
+  ctx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
+  ctx.fillStyle = 'black';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText("Side", canvas.width / 2, canvas.height / 2);
 
   // Clear the center rectangle (non-blurred area)
   ctx.clearRect(
@@ -342,35 +376,43 @@ async function applyBlurOverlay() {
 // Function to resize canvas and scale all elements proportionally
 const resizeCanvas = (newSizeKey) => {
   console.log(`Resizing canvas to: ${newSizeKey}`);
-  const newSize = CANVAS_SIZES[newSizeKey];
+  const innerSize = CANVAS_SIZES[newSizeKey];
   
-  if (!newSize) {
+  if (!innerSize) {
     console.error(`Size "${newSizeKey}" not found in CANVAS_SIZES`);
     return;
   }
 
+  // Calculate total size including borders
+  const totalSize = getTotalSize(innerSize);
+
   const oldWidth = store.width;
   const oldHeight = store.height;
-  const scaleX = newSize.width / oldWidth;
-  const scaleY = newSize.height / oldHeight;
+  const scaleX = totalSize.width / oldWidth;
+  const scaleY = totalSize.height / oldHeight;
 
-  // Update store dimensions
-  store.setSize(newSize.width, newSize.height);
+  // Update store dimensions to total size
+  store.setSize(totalSize.width, totalSize.height);
 
   // Scale and update overlay elements
   borderElement.set({
-    width: newSize.width,
-    height: newSize.height,
+    width: totalSize.width,
+    height: totalSize.height,
   });
 
   mirrorWrap.set({
-    width: newSize.width,
-    height: newSize.height,
+    width: totalSize.width,
+    height: totalSize.height,
   });
 
   imageWrapElement.set({
-    width: newSize.width,
-    height: newSize.height,
+    width: totalSize.width,
+    height: totalSize.height,
+  });
+
+  blurOverlay.set({
+    width: totalSize.width,
+    height: totalSize.height,
   });
 
   // Scale all other elements
@@ -378,7 +420,8 @@ const resizeCanvas = (newSizeKey) => {
     if (
       element !== borderElement &&
       element !== mirrorWrap &&
-      element !== imageWrapElement
+      element !== imageWrapElement &&
+      element !== blurOverlay
     ) {
       element.set({
         x: element.x * scaleX,
@@ -460,7 +503,7 @@ store.on("change", () => {
 
 const CustomToolbar = ({ store }) => {
   const [borderColor, setBorderColor] = useState("#000000");
-  const [borderWidth, setBorderWidth] = useState(20);
+  const [borderWidth, setBorderWidth] = useState(BORDER_WIDTH_PIXELS); // Default to our 0.75 inch border
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [selectedOption, setSelectedOption] = useState("none");
   const [canvasSize, setCanvasSize] = useState("");
@@ -577,11 +620,11 @@ const CustomToolbar = ({ store }) => {
             selectedValue={canvasSize}
             label="Canvas Size (inches):"
           >
-            <Radio label="1 × 2" value="8x10" />
+            <Radio label="8 × 10" value="8x10" />
             <Radio label="9 × 9" value="9x9" />
             <Radio label="12 × 12" value="12x12" />
             <Radio label="14 × 14" value="14x14" />
-            <Radio label="16 × 16" value="16x16" />
+            <Radio label="16 × 20" value="16x20" />
             <Radio label="18 × 18" value="18x18" />
             <Radio label="20 × 20" value="20x20" />
           </RadioGroup>
