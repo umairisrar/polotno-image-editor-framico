@@ -23,11 +23,15 @@ import "@blueprintjs/core/lib/css/blueprint.css";
 import { createStore } from "polotno/model/store";
 
 // Define DPI constant (300 is standard print quality)
-const DPI = 300;
+const DPI = 72;
 
 // Define border width in inches
 const BORDER_WIDTH_INCHES = 0.75;
 const BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
+
+// Define outer back border (fixed at 0.25 inches from sides border)
+const BACK_BORDER_INCHES = BORDER_WIDTH_INCHES / 3 ;
+const BACK_BORDER_PIXELS = BACK_BORDER_INCHES * DPI;
 
 // Define canvas sizes in inches and convert to pixels for the INNER area
 const CANVAS_SIZES = {
@@ -52,8 +56,16 @@ const getTotalSize = (innerSize) => {
   };
 };
 
+// Function to get the total size including border and back area
+const getTotalSizeWithBack = (innerSize) => {
+  return {
+    width: innerSize.width + 2 * BORDER_WIDTH_PIXELS + 2 * BACK_BORDER_PIXELS,
+    height: innerSize.height + 2 * BORDER_WIDTH_PIXELS + 2 * BACK_BORDER_PIXELS
+  };
+};
+
 // Use total size (inner + border) for the store
-const totalDefaultSize = getTotalSize(CANVAS_SIZES[DEFAULT_SIZE]);
+const totalDefaultSize = getTotalSizeWithBack(CANVAS_SIZES[DEFAULT_SIZE]);
 
 const store = createStore({
   key: "nFA5H9elEytDyPyvKL7T", // Replace with your Polotno key
@@ -147,6 +159,10 @@ async function generateMirrorWrap() {
   innerContent.width = store.width - 2 * PADDING;
   innerContent.height = store.height - 2 * PADDING;
   const innerCtx = innerContent.getContext("2d");
+  
+  // Calculate offsets based on the back border
+  const backOffset = BACK_BORDER_PIXELS;
+  
   // Draw the full image offset so only the center region appears in innerContent
   innerCtx.drawImage(imageContent, -PADDING, -PADDING);
 
@@ -224,16 +240,26 @@ async function generateMirrorWrap() {
   ctx.drawImage(innerContent, -innerContent.width, -innerContent.height);
   ctx.restore();
 
-  // Optional: visualize the "inner" area with a rectangle (comment out if not needed)
-  ctx.rect(PADDING, PADDING, innerContent.width, innerContent.height);
+  // Draw a dashed line for the main inner area
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 2;
   ctx.setLineDash([5, 5]); // Create dashed line
   ctx.strokeRect(
-    PADDING,
-    PADDING,
-    store.width - PADDING * 2,
-    store.height - PADDING * 2
+    PADDING + backOffset,
+    PADDING + backOffset,
+    store.width - (PADDING + backOffset) * 2,
+    store.height - (PADDING + backOffset) * 2
+  );
+
+  // Draw outer "Back" border
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = Math.max(1, Math.round(ctx.lineWidth * 0.8)); // Slightly thinner line
+  ctx.setLineDash([3, 3]); // Smaller dashed line
+  ctx.strokeRect(
+    backOffset,
+    backOffset,
+    store.width - backOffset * 2,
+    store.height - backOffset * 2
   );
 
   // Add "Sides" text labels
@@ -243,9 +269,25 @@ async function generateMirrorWrap() {
   ctx.textBaseline = 'middle';
 
   // Top side
-  ctx.fillText('Sides', canvas.width / 2, PADDING / 2);
-  // Bottom side
- 
+  ctx.fillText('Sides', canvas.width / 2, (PADDING + backOffset * 3 ) / 2);
+  
+  // Add "Back" text labels - smaller than "Sides"
+  const backFontSize = Math.max(9, Math.round(DPI / 8));
+  ctx.font = `${backFontSize}px Arial`;
+  
+  // Top back label
+  ctx.fillText('Back', canvas.width / 2, backOffset / 2);
+  // Left back label
+  ctx.save();
+  ctx.translate(backOffset / 2, canvas.height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.restore();
+  // Right back label
+  ctx.save();
+  ctx.translate(canvas.width - backOffset / 2, canvas.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.restore();
+
   // Restore the border and image wrap visibility if they were visible before
   if (borderWasVisible) {
     setTimeout(() => {
@@ -272,11 +314,13 @@ const applyBorder = (color, width) => {
 
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Clear the inner rectangle (leave border)
   ctx.clearRect(
-    borderWidth,
-    borderWidth,
-    canvas.width - borderWidth * 2,
-    canvas.height - borderWidth * 2
+    borderWidth + BACK_BORDER_PIXELS,
+    borderWidth + BACK_BORDER_PIXELS,
+    canvas.width - (borderWidth + BACK_BORDER_PIXELS) * 2,
+    canvas.height - (borderWidth + BACK_BORDER_PIXELS) * 2
   );
 
   const borderDataUrl = canvas.toDataURL();
@@ -303,16 +347,48 @@ async function applyImageWrap() {
   canvas.height = store.height;
   const ctx = canvas.getContext('2d');
 
-  // Draw a dashed red rectangle as the wrap
+  // Draw a dashed white rectangle as the inner wrap (Sides)
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 2;
   ctx.setLineDash([5, 5]); // Create dashed line
   ctx.strokeRect(
-    PADDING,
-    PADDING,
-    store.width - PADDING * 2,
-    store.height - PADDING * 2
+    PADDING + BACK_BORDER_PIXELS,
+    PADDING + BACK_BORDER_PIXELS,
+    store.width - (PADDING + BACK_BORDER_PIXELS) * 2,
+    store.height - (PADDING + BACK_BORDER_PIXELS) * 2
   );
+  
+  // Draw outer "Back" border
+  ctx.lineWidth = Math.max(1, Math.round(ctx.lineWidth * 0.8)); // Slightly thinner line
+  ctx.setLineDash([3, 3]); // Smaller dashed line
+  ctx.strokeRect(
+    BACK_BORDER_PIXELS,
+    BACK_BORDER_PIXELS,
+    store.width - BACK_BORDER_PIXELS * 2,
+    store.height - BACK_BORDER_PIXELS * 2
+  );
+  
+  // Add "Sides" text
+  ctx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
+  ctx.fillStyle = 'black';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Sides', canvas.width / 2, (PADDING + BACK_BORDER_PIXELS * 3) / 2);
+  
+  // Add "Back" text labels - smaller than "Sides"
+  const backFontSize = Math.max(9, Math.round(DPI / 8));
+  ctx.font = `${backFontSize}px Arial`;
+  
+  // Top back label
+  ctx.fillText('Back', canvas.width / 2, BACK_BORDER_PIXELS / 2);
+  // Left back label
+  ctx.save();
+  ctx.rotate(-Math.PI / 2);
+  ctx.restore();
+  // Right back label
+  ctx.save();
+  ctx.rotate(Math.PI / 2);
+  ctx.restore();
 
   // Convert to data URL
   const wrapDataUrl = canvas.toDataURL();
@@ -348,19 +424,38 @@ async function applyBlurOverlay() {
   ctx.drawImage(imageContent, 0, 0);
   ctx.filter = 'none';
   
-  // Add text with DPI-adjusted font size
+  // Add text with DPI-adjusted font size for Sides
   ctx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
   ctx.fillStyle = 'black';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText("Side", canvas.width / 2, canvas.height / 2);
+  
+  // Add "Back" text labels - smaller font
+  const backFontSize = Math.max(9, Math.round(DPI / 8));
+  ctx.font = `${backFontSize}px Arial`;
+  
+  // Back text labels
+  ctx.fillText('Back', canvas.width / 2, BACK_BORDER_PIXELS / 2); // top
+  
+  // Left back label
+  ctx.save();
+  ctx.translate(BACK_BORDER_PIXELS / 2, canvas.height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.restore();
+  
+  // Right back label
+  ctx.save();
+  ctx.translate(canvas.width - BACK_BORDER_PIXELS / 2, canvas.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.restore();
 
   // Clear the center rectangle (non-blurred area)
   ctx.clearRect(
-    PADDING,
-    PADDING,
-    store.width - PADDING * 2,
-    store.height - PADDING * 2
+    PADDING + BACK_BORDER_PIXELS,
+    PADDING + BACK_BORDER_PIXELS,
+    store.width - (PADDING + BACK_BORDER_PIXELS) * 2,
+    store.height - (PADDING + BACK_BORDER_PIXELS) * 2
   );
 
   // Convert to data URL
@@ -383,8 +478,8 @@ const resizeCanvas = (newSizeKey) => {
     return;
   }
 
-  // Calculate total size including borders
-  const totalSize = getTotalSize(innerSize);
+  // Calculate total size including borders and back area
+  const totalSize = getTotalSizeWithBack(innerSize);
 
   const oldWidth = store.width;
   const oldHeight = store.height;
