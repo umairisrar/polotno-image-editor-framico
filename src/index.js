@@ -24,6 +24,7 @@ import { createStore } from "polotno/model/store";
 
 // Define DPI constant (300 is standard print quality)
 const DPI = 72;
+const HIGH_RES_DPI = 300; // Add high resolution DPI constant
 
 // Define border width in inches (will be updated dynamically through UI)
 const BORDER_WIDTH_INCHES = 0.75;
@@ -605,6 +606,111 @@ store.on("change", () => {
   }
 });
 
+// Function to generate and download high-resolution image
+const downloadHighResImage = async (currentCanvasSize) => {
+  // Store current visibility states
+  const mirrorVisible = mirrorWrap.visible;
+  const borderVisible = borderElement.visible;
+  const blurVisible = blurOverlay.visible;
+  const imageWrapVisible = imageWrapElement.visible;
+  
+  // Hide all overlays temporarily
+  skipChange = true;
+  mirrorWrap.set({ visible: false });
+  borderElement.set({ visible: false });
+  blurOverlay.set({ visible: false });
+  imageWrapElement.set({ visible: false });
+  
+  try {
+    // Get current canvas size info
+    const currentSize = Object.entries(CANVAS_SIZES).find(
+      ([key]) => key === currentCanvasSize
+    )[1];
+    
+    // Calculate scale factor between current DPI and high-res DPI
+    const scaleFactor = HIGH_RES_DPI / DPI;
+    
+    // Calculate dimensions including borders
+    const totalWidth = currentSize.width + 2 * BORDER_WIDTH_PIXELS + 2 * BACK_BORDER_PIXELS;
+    const totalHeight = currentSize.height + 2 * BORDER_WIDTH_PIXELS + 2 * BACK_BORDER_PIXELS;
+    
+    // Create high-res canvas with full dimensions (including borders and back)
+    const highResCanvas = document.createElement("canvas");
+    highResCanvas.width = totalWidth * scaleFactor;
+    highResCanvas.height = totalHeight * scaleFactor;
+    const highResCtx = highResCanvas.getContext("2d");
+    
+    // Scale everything for high-res output
+    highResCtx.scale(scaleFactor, scaleFactor);
+    
+    // Get current canvas content
+    const content = await store.toDataURL();
+    const img = await new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.src = content;
+    });
+    
+    // Draw the entire image first
+    highResCtx.drawImage(img, 0, 0, totalWidth, totalHeight);
+    
+    // Calculate line widths and positions based on DPI scaling
+    const backBorderPixels = updateBackBorderSize(BORDER_WIDTH_INCHES);
+    
+    // Draw dashed lines for borders (sides area)
+    highResCtx.strokeStyle = 'white';
+    highResCtx.lineWidth = 2;
+    highResCtx.setLineDash([5, 5]); // Create dashed line
+    
+    // Draw the inner border (sides area)
+    highResCtx.strokeRect(
+      BORDER_WIDTH_PIXELS + backBorderPixels,
+      BORDER_WIDTH_PIXELS + backBorderPixels,
+      totalWidth - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels),
+      totalHeight - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels)
+    );
+    
+    // Draw outer "Back" border
+    highResCtx.lineWidth = Math.max(1, Math.round(highResCtx.lineWidth * 0.8)); // Slightly thinner line
+    highResCtx.setLineDash([3, 3]); // Smaller dashed line
+    highResCtx.strokeRect(
+      backBorderPixels,
+      backBorderPixels,
+      totalWidth - 2 * backBorderPixels,
+      totalHeight - 2 * backBorderPixels
+    );
+    
+    // Add "Sides" text label
+    highResCtx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
+    highResCtx.fillStyle = 'white';
+    highResCtx.textAlign = 'center';
+    highResCtx.textBaseline = 'middle';
+    highResCtx.fillText('Sides', totalWidth / 2, (BORDER_WIDTH_PIXELS + backBorderPixels * 3) / 2);
+    
+    // Add "Back" text labels - smaller than "Sides"
+    const backFontSize = Math.max(9, Math.round(DPI / 8));
+    highResCtx.font = `${backFontSize}px Arial`;
+    
+    // Top back label
+    highResCtx.fillText('Back', totalWidth / 2, backBorderPixels / 2);
+    
+    // Create download link
+    const link = document.createElement("a");
+    link.download = `canvas-image-300dpi.png`;
+    link.href = highResCanvas.toDataURL("image/png");
+    link.click();
+  } catch (error) {
+    console.error("Error generating high-res image:", error);
+  } finally {
+    // Restore original visibility
+    mirrorWrap.set({ visible: mirrorVisible });
+    borderElement.set({ visible: borderVisible });
+    blurOverlay.set({ visible: blurVisible });
+    imageWrapElement.set({ visible: imageWrapVisible });
+    skipChange = false;
+  }
+};
+
 const CustomToolbar = ({ store }) => {
   const [borderColor, setBorderColor] = useState("#000000");
   const [borderWidth, setBorderWidth] = useState(BORDER_WIDTH_PIXELS); // Default to our 0.75 inch border
@@ -747,7 +853,13 @@ const CustomToolbar = ({ store }) => {
         style={{ display: "flex", alignItems: "center", marginBottom: "10px" }}
       >
         <Toolbar store={store} downloadButtonEnabled />
-        
+        <Button
+          icon="download"
+          intent="primary"
+          text="Download 300 DPI"
+          onClick={() => downloadHighResImage(canvasSize)}
+          style={{ marginLeft: "10px" }}
+        />
       </div>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         <RadioGroup
