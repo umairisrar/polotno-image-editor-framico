@@ -25,13 +25,18 @@ import { createStore } from "polotno/model/store";
 // Define DPI constant (300 is standard print quality)
 const DPI = 72;
 
-// Define border width in inches
+// Define border width in inches (will be updated dynamically through UI)
 const BORDER_WIDTH_INCHES = 0.75;
 const BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
 
-// Define outer back border (fixed at 0.25 inches from sides border)
-const BACK_BORDER_INCHES = BORDER_WIDTH_INCHES / 3 ;
+// Define outer back border (fixed at 1/3 of the border width)
+const BACK_BORDER_INCHES = BORDER_WIDTH_INCHES / 3;
 const BACK_BORDER_PIXELS = BACK_BORDER_INCHES * DPI;
+
+// Function to update back border based on border width
+const updateBackBorderSize = (borderWidthInches) => {
+  return borderWidthInches / 3 * DPI;
+};
 
 // Define canvas sizes in inches and convert to pixels for the INNER area
 const CANVAS_SIZES = {
@@ -307,6 +312,10 @@ async function generateMirrorWrap() {
 // Update applyBorder to use the border width as default
 const applyBorder = (color, width) => {
   const borderWidth = width || BORDER_WIDTH_PIXELS;
+  // Calculate border width in inches and back border size
+  const borderWidthInches = borderWidth / DPI;
+  const backBorderPixels = updateBackBorderSize(borderWidthInches);
+  
   const canvas = document.createElement("canvas");
   canvas.width = store.width;
   canvas.height = store.height;
@@ -317,10 +326,10 @@ const applyBorder = (color, width) => {
   
   // Clear the inner rectangle (leave border)
   ctx.clearRect(
-    borderWidth + BACK_BORDER_PIXELS,
-    borderWidth + BACK_BORDER_PIXELS,
-    canvas.width - (borderWidth + BACK_BORDER_PIXELS) * 2,
-    canvas.height - (borderWidth + BACK_BORDER_PIXELS) * 2
+    borderWidth + backBorderPixels,
+    borderWidth + backBorderPixels,
+    canvas.width - (borderWidth + backBorderPixels) * 2,
+    canvas.height - (borderWidth + backBorderPixels) * 2
   );
 
   const borderDataUrl = canvas.toDataURL();
@@ -599,9 +608,10 @@ store.on("change", () => {
 const CustomToolbar = ({ store }) => {
   const [borderColor, setBorderColor] = useState("#000000");
   const [borderWidth, setBorderWidth] = useState(BORDER_WIDTH_PIXELS); // Default to our 0.75 inch border
+  const [borderWidthInches, setBorderWidthInches] = useState(0.75); // Default border width in inches
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [selectedOption, setSelectedOption] = useState("none");
-  const [canvasSize, setCanvasSize] = useState("");
+  const [canvasSize, setCanvasSize] = useState(DEFAULT_SIZE); // Default canvas size
 
   const handleOptionChange = (e) => {
     const newOption = e.target.value;
@@ -646,9 +656,54 @@ const CustomToolbar = ({ store }) => {
   const handleWidthChange = (value) => {
     const width = Math.max(1, Math.min(200, value));
     setBorderWidth(width);
+    
+    // Update border width in inches
+    const newBorderWidthInches = width / DPI;
+    setBorderWidthInches(newBorderWidthInches);
+    
     if (selectedOption === "border") {
       skipChange = true;
       applyBorder(borderColor, width);
+      skipChange = false;
+    }
+  };
+
+  const handleBorderWidthInchesChange = (e) => {
+    const widthInches = parseFloat(e.target.value);
+    setBorderWidthInches(widthInches);
+    const widthPixels = widthInches * DPI;
+    setBorderWidth(widthPixels);
+    
+    // Update back border size based on the new border width
+    const backBorderPixels = updateBackBorderSize(widthInches);
+    
+    if (selectedOption === "border") {
+      skipChange = true;
+      
+      // Redraw the border with new dimensions
+      const canvas = document.createElement("canvas");
+      canvas.width = store.width;
+      canvas.height = store.height;
+      const ctx = canvas.getContext("2d");
+
+      ctx.fillStyle = borderColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      ctx.clearRect(
+        widthPixels + backBorderPixels,
+        widthPixels + backBorderPixels,
+        canvas.width - (widthPixels + backBorderPixels) * 2,
+        canvas.height - (widthPixels + backBorderPixels) * 2
+      );
+
+      const borderDataUrl = canvas.toDataURL();
+      borderElement.set({
+        src: borderDataUrl,
+        width: store.width,
+        height: store.height,
+        visible: true,
+      });
+      
       skipChange = false;
     }
   };
@@ -694,7 +749,7 @@ const CustomToolbar = ({ store }) => {
         <Toolbar store={store} downloadButtonEnabled />
         
       </div>
-      <div style={{ display: "flex", alignItems: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         <RadioGroup
           inline
           onChange={handleOptionChange}
@@ -706,6 +761,7 @@ const CustomToolbar = ({ store }) => {
           <Radio label="Solid Border" value="border" />
           <Radio label="Image Wrap" value="imageWrap" />
         </RadioGroup>
+        
         <div
           style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}
         >
@@ -724,12 +780,16 @@ const CustomToolbar = ({ store }) => {
             <Radio label="20 × 20" value="20x20" />
           </RadioGroup>
         </div>
+        
         {selectedOption === "border" && (
           <div
             style={{
               marginLeft: "10px",
               display: "flex",
               alignItems: "center",
+              flexWrap: "wrap",
+              marginTop: "10px",
+              width: "100%"
             }}
           >
             <Popover
@@ -754,14 +814,28 @@ const CustomToolbar = ({ store }) => {
                 }}
               />
             </Popover>
-            <span style={{ marginRight: "5px" }}>Width:</span>
-            <NumericInput
-              min={1}
-              max={100}
-              value={borderWidth}
-              onValueChange={handleWidthChange}
-              style={{ width: "60px" }}
-            />
+            
+            <div style={{ display: "flex", alignItems: "center", marginRight: "20px" }}>
+              <span style={{ marginRight: "5px" }}>Custom Width:</span>
+              <NumericInput
+                min={1}
+                max={200}
+                value={borderWidth}
+                onValueChange={handleWidthChange}
+                style={{ width: "60px" }}
+              />
+            </div>
+            
+            <RadioGroup
+              inline
+              onChange={handleBorderWidthInchesChange}
+              selectedValue={borderWidthInches}
+              label="Border Width (inches):"
+            >
+              <Radio label="0.75″" value={0.75} />
+              <Radio label="1.25″" value={1.25} />
+              <Radio label="1.50″" value={1.5} />
+            </RadioGroup>
           </div>
         )}
       </div>
