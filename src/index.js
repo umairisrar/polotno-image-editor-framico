@@ -787,46 +787,66 @@ const CustomToolbar = ({ store }) => {
     
     const reader = new FileReader();
     reader.onload = (event) => {
-      // Find all image elements that are not overlays
-      const imageElements = page.children.filter(
-        el => el.type === 'image' && 
-        el !== borderElement && 
-        el !== mirrorWrap && 
-        el !== imageWrapElement && 
-        el !== blurOverlay
-      );
-      
-      if (imageElements.length > 0) {
-        // Replace the first image element with the uploaded image
-        const mainImage = imageElements[0];
-        mainImage.set({
-          src: event.target.result,
-          width: store.width,
-          height: store.height
-        });
-      } else {
-        // If no image element found, create a new one
-        page.addElement({
-          type: "image",
-          width: store.width,
-          height: store.height,
-          src: event.target.result
-        });
-      }
-      
-      // Update effects if active
-      if (mirrorWrap.visible) {
-        generateMirrorWrap().then((url) => {
-          mirrorWrap.set({ src: url });
-        });
-      }
-      
-      if (imageWrapElement.visible) {
-        applyImageWrap();
-        applyBlurOverlay();
-      }
-      
-      setIsUploading(false);
+      // Create a temporary image to get dimensions
+      const tempImg = new Image();
+      tempImg.onload = () => {
+        // Find all image elements that are not overlays
+        const imageElements = page.children.filter(
+          el => el.type === 'image' && 
+          el !== borderElement && 
+          el !== mirrorWrap && 
+          el !== imageWrapElement && 
+          el !== blurOverlay
+        );
+        
+        // Calculate the available area for the image (inside borders)
+        const innerWidth = store.width - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS);
+        const innerHeight = store.height - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS);
+        
+        if (imageElements.length > 0) {
+          // Replace the first image element with the uploaded image
+          const mainImage = imageElements[0];
+          mainImage.set({
+            src: event.target.result,
+            x: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+            y: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+            width: innerWidth,
+            height: innerHeight,
+            // Make sure image is stretched to fill the space without cropping
+            stretchMode: 'stretch' // Options: stretch, cover, contain, repeat
+          });
+        } else {
+          // If no image element found, create a new one
+          page.addElement({
+            type: "image",
+            src: event.target.result,
+            x: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+            y: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+            width: innerWidth,
+            height: innerHeight,
+            stretchMode: 'stretch'
+          });
+        }
+        
+        // Update effects if active
+        if (mirrorWrap.visible) {
+          setTimeout(() => {
+            generateMirrorWrap().then((url) => {
+              mirrorWrap.set({ src: url });
+            });
+          }, 100);
+        }
+        
+        if (imageWrapElement.visible) {
+          setTimeout(() => {
+            applyImageWrap();
+            applyBlurOverlay();
+          }, 100);
+        }
+        
+        setIsUploading(false);
+      };
+      tempImg.src = event.target.result;
     };
     
     reader.readAsDataURL(file);
