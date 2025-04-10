@@ -561,7 +561,7 @@ page.addElement({
   type: "image",
   width: store.width,
   height: store.height,
-  src: "https://images.unsplash.com/photo-1702234728311-baaa6c8aa212?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMTY5OTZ8MHwxfGFsbHw0MHx8fHx8fDJ8fDE3MDI4MjUyODB8&ixlib=rb-4.0.3&q=80&w=1080",
+  src: "https://images.unsplash.com/photo-1742302954292-1f903368084e?q=80&w=1974&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
 });
 
 let timeout;
@@ -771,11 +771,66 @@ const CustomToolbar = ({ store }) => {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [selectedOption, setSelectedOption] = useState("none");
   const [canvasSize, setCanvasSize] = useState(DEFAULT_SIZE);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Update global currentCanvasSize whenever local state changes
   useEffect(() => {
     currentCanvasSize = canvasSize;
   }, [canvasSize]);
+
+  // Handle image upload
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      // Find all image elements that are not overlays
+      const imageElements = page.children.filter(
+        el => el.type === 'image' && 
+        el !== borderElement && 
+        el !== mirrorWrap && 
+        el !== imageWrapElement && 
+        el !== blurOverlay
+      );
+      
+      if (imageElements.length > 0) {
+        // Replace the first image element with the uploaded image
+        const mainImage = imageElements[0];
+        mainImage.set({
+          src: event.target.result,
+          width: store.width,
+          height: store.height
+        });
+      } else {
+        // If no image element found, create a new one
+        page.addElement({
+          type: "image",
+          width: store.width,
+          height: store.height,
+          src: event.target.result
+        });
+      }
+      
+      // Update effects if active
+      if (mirrorWrap.visible) {
+        generateMirrorWrap().then((url) => {
+          mirrorWrap.set({ src: url });
+        });
+      }
+      
+      if (imageWrapElement.visible) {
+        applyImageWrap();
+        applyBlurOverlay();
+      }
+      
+      setIsUploading(false);
+    };
+    
+    reader.readAsDataURL(file);
+  };
 
   const handleOptionChange = (e) => {
     const newOption = e.target.value;
@@ -936,6 +991,22 @@ const CustomToolbar = ({ store }) => {
           onClick={() => downloadHighResImage(currentCanvasSize)}
           style={{ marginLeft: "10px" }}
         />
+        <div style={{ marginLeft: "10px", position: "relative" }}>
+          <Button
+            icon="upload"
+            intent="success"
+            text={isUploading ? "Uploading..." : "Upload Image"}
+            onClick={() => document.getElementById("image-upload").click()}
+            disabled={isUploading}
+          />
+          <input
+            id="image-upload"
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            style={{ display: "none" }}
+          />
+        </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         <RadioGroup
