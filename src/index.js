@@ -28,12 +28,12 @@ const HIGH_RES_DPI = 300; // Add high resolution DPI constant
 
 // Define border width in inches (will be updated dynamically through UI)
 const BORDER_WIDTH_INCHES = 0.75;
-const BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
+let BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
 const DEFAULT_BORDER_COLOR = "#000000"; // Default border color
 
 // Define outer back border (fixed at 1/3 of the border width)
 const BACK_BORDER_INCHES = BORDER_WIDTH_INCHES / 3;
-const BACK_BORDER_PIXELS = BACK_BORDER_INCHES * DPI;
+let BACK_BORDER_PIXELS = BACK_BORDER_INCHES * DPI;
 
 // Function to update back border based on border width
 const updateBackBorderSize = (borderWidthInches) => {
@@ -133,7 +133,7 @@ const imageWrapElement = page.addElement({
 });
 
 // Update PADDING to use the new border width constant
-const PADDING = BORDER_WIDTH_PIXELS;
+let PADDING = BORDER_WIDTH_PIXELS;
 
 async function generateMirrorWrap() {
   // First check if borderElement is defined
@@ -838,12 +838,18 @@ const CustomToolbar = ({ store }) => {
     const widthPixels = widthInches * DPI;
     setBorderWidth(widthPixels);
     
-    // Update back border size based on the new border width
-    const backBorderPixels = updateBackBorderSize(widthInches);
+    // Update global variables that affect all effects
+    BORDER_WIDTH_PIXELS = widthPixels;
+    PADDING = widthPixels;
+    BACK_BORDER_PIXELS = updateBackBorderSize(widthInches);
     
+    // Update back border size based on the new border width
+    const backBorderPixels = BACK_BORDER_PIXELS;
+    
+    skipChange = true;
+    
+    // Apply changes based on current selected option
     if (selectedOption === "border") {
-      skipChange = true;
-      
       // Redraw the border with new dimensions
       const canvas = document.createElement("canvas");
       canvas.width = store.width;
@@ -867,9 +873,21 @@ const CustomToolbar = ({ store }) => {
         height: store.height,
         visible: true,
       });
-      
-      skipChange = false;
+    } else if (selectedOption === "mirror") {
+      // Regenerate mirror wrap with new border width
+      generateMirrorWrap().then((url) => {
+        mirrorWrap.set({
+          src: url,
+          visible: true,
+        });
+      });
+    } else if (selectedOption === "imageWrap") {
+      // Regenerate image wrap with new border width
+      applyImageWrap();
+      applyBlurOverlay();
     }
+    
+    skipChange = false;
   };
 
   const handleSizeChange = (e) => {
@@ -951,7 +969,7 @@ const CustomToolbar = ({ store }) => {
           </RadioGroup>
         </div>
         
-        {selectedOption === "border" && (
+        {selectedOption !== "none" && (
           <div
             style={{
               marginLeft: "10px",
@@ -962,39 +980,30 @@ const CustomToolbar = ({ store }) => {
               width: "100%"
             }}
           >
-            <Popover
-              isOpen={showColorPicker}
-              onInteraction={(state) => setShowColorPicker(state)}
-              content={
-                <div style={{ padding: "10px" }}>
-                  <SketchPicker
-                    color={borderColor}
-                    onChange={handleColorChange}
-                  />
-                </div>
-              }
-              position="bottom"
-            >
-              <Button
-                style={{
-                  backgroundColor: borderColor,
-                  width: "30px",
-                  height: "30px",
-                  marginRight: "10px",
-                }}
-              />
-            </Popover>
-            
-            <div style={{ display: "flex", alignItems: "center", marginRight: "20px" }}>
-              <span style={{ marginRight: "5px" }}>Custom Width:</span>
-              <NumericInput
-                min={1}
-                max={200}
-                value={borderWidth}
-                onValueChange={handleWidthChange}
-                style={{ width: "60px" }}
-              />
-            </div>
+            {selectedOption === "border" && (
+              <Popover
+                isOpen={showColorPicker}
+                onInteraction={(state) => setShowColorPicker(state)}
+                content={
+                  <div style={{ padding: "10px" }}>
+                    <SketchPicker
+                      color={borderColor}
+                      onChange={handleColorChange}
+                    />
+                  </div>
+                }
+                position="bottom"
+              >
+                <Button
+                  style={{
+                    backgroundColor: borderColor,
+                    width: "30px",
+                    height: "30px",
+                    marginRight: "10px",
+                  }}
+                />
+              </Popover>
+            )}
             
             <RadioGroup
               inline
