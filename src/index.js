@@ -29,6 +29,7 @@ const HIGH_RES_DPI = 300; // Add high resolution DPI constant
 // Define border width in inches (will be updated dynamically through UI)
 const BORDER_WIDTH_INCHES = 0.75;
 const BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
+const DEFAULT_BORDER_COLOR = "#000000"; // Default border color
 
 // Define outer back border (fixed at 1/3 of the border width)
 const BACK_BORDER_INCHES = BORDER_WIDTH_INCHES / 3;
@@ -53,6 +54,7 @@ const CANVAS_SIZES = {
 
 // Default canvas size
 const DEFAULT_SIZE = "8x10";
+let currentCanvasSize = DEFAULT_SIZE; // Track the current canvas size globally
 
 // Function to get the total size including border
 const getTotalSize = (innerSize) => {
@@ -479,7 +481,7 @@ async function applyBlurOverlay() {
 }
 
 // Function to resize canvas and scale all elements proportionally
-const resizeCanvas = (newSizeKey) => {
+const resizeCanvas = (newSizeKey, currentBorderColor, currentBorderWidth) => {
   console.log(`Resizing canvas to: ${newSizeKey}`);
   const innerSize = CANVAS_SIZES[newSizeKey];
   
@@ -487,6 +489,9 @@ const resizeCanvas = (newSizeKey) => {
     console.error(`Size "${newSizeKey}" not found in CANVAS_SIZES`);
     return;
   }
+
+  const borderColorToUse = currentBorderColor || DEFAULT_BORDER_COLOR;
+  const borderWidthToUse = currentBorderWidth || BORDER_WIDTH_PIXELS;
 
   // Calculate total size including borders and back area
   const totalSize = getTotalSizeWithBack(innerSize);
@@ -543,13 +548,14 @@ const resizeCanvas = (newSizeKey) => {
   }
   
   if (borderElement.visible) {
-    setTimeout(() => applyBorder(borderColor, borderWidth), 100);
+    setTimeout(() => applyBorder(borderColorToUse, borderWidthToUse), 100);
   }
   
   if (imageWrapElement.visible) {
     setTimeout(() => applyImageWrap(), 100);
   }
 };
+
 // Add default background image
 page.addElement({
   type: "image",
@@ -608,6 +614,37 @@ store.on("change", () => {
 
 // Function to generate and download high-resolution image
 const downloadHighResImage = async (currentCanvasSize) => {
+  // Get the current border color from the borderElement if visible
+  let currentBorderColor = DEFAULT_BORDER_COLOR;
+  
+  // If the border element is visible, try to extract its current color
+  if (borderElement && borderElement.visible) {
+    try {
+      // Create a temporary canvas to extract the border color
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = 10;
+      tempCanvas.height = 10;
+      const tempCtx = tempCanvas.getContext("2d");
+      
+      // Draw border element to the temp canvas
+      const img = await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.src = borderElement.src;
+      });
+      
+      tempCtx.drawImage(img, 0, 0, 10, 10);
+      
+      // Get pixel data from border (assuming top-left pixel has the border color)
+      const pixelData = tempCtx.getImageData(0, 0, 1, 1).data;
+      currentBorderColor = `rgb(${pixelData[0]}, ${pixelData[1]}, ${pixelData[2]})`;
+    } catch (error) {
+      console.error("Error extracting border color:", error);
+      // Fall back to default color
+      currentBorderColor = DEFAULT_BORDER_COLOR;
+    }
+  }
+  
   // Store current visibility states
   const mirrorVisible = mirrorWrap.visible;
   const borderVisible = borderElement.visible;
@@ -656,6 +693,21 @@ const downloadHighResImage = async (currentCanvasSize) => {
     
     // Calculate line widths and positions based on DPI scaling
     const backBorderPixels = updateBackBorderSize(BORDER_WIDTH_INCHES);
+    
+    // If we have a border, redraw it in the correct color
+    if (borderVisible) {
+      // Create solid border
+      highResCtx.fillStyle = currentBorderColor;
+      highResCtx.fillRect(0, 0, totalWidth, totalHeight);
+      
+      // Clear the inner rectangle
+      highResCtx.clearRect(
+        BORDER_WIDTH_PIXELS + backBorderPixels,
+        BORDER_WIDTH_PIXELS + backBorderPixels,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels)
+      );
+    }
     
     // Draw dashed lines for borders (sides area)
     highResCtx.strokeStyle = 'white';
@@ -712,12 +764,18 @@ const downloadHighResImage = async (currentCanvasSize) => {
 };
 
 const CustomToolbar = ({ store }) => {
-  const [borderColor, setBorderColor] = useState("#000000");
-  const [borderWidth, setBorderWidth] = useState(BORDER_WIDTH_PIXELS); // Default to our 0.75 inch border
-  const [borderWidthInches, setBorderWidthInches] = useState(0.75); // Default border width in inches
+  // Use the global constants for initial state
+  const [borderColor, setBorderColor] = useState(DEFAULT_BORDER_COLOR);
+  const [borderWidth, setBorderWidth] = useState(BORDER_WIDTH_PIXELS);
+  const [borderWidthInches, setBorderWidthInches] = useState(BORDER_WIDTH_INCHES);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [selectedOption, setSelectedOption] = useState("none");
-  const [canvasSize, setCanvasSize] = useState(DEFAULT_SIZE); // Default canvas size
+  const [canvasSize, setCanvasSize] = useState(DEFAULT_SIZE);
+
+  // Update global currentCanvasSize whenever local state changes
+  useEffect(() => {
+    currentCanvasSize = canvasSize;
+  }, [canvasSize]);
 
   const handleOptionChange = (e) => {
     const newOption = e.target.value;
@@ -820,7 +878,7 @@ const CustomToolbar = ({ store }) => {
     setCanvasSize(newSize);
 
     skipChange = true;
-    resizeCanvas(newSize);
+    resizeCanvas(newSize, borderColor, borderWidth);
 
     // Use a small timeout to ensure all canvas operations complete
     setTimeout(() => {
@@ -857,7 +915,7 @@ const CustomToolbar = ({ store }) => {
           icon="download"
           intent="primary"
           text="Download 300 DPI"
-          onClick={() => downloadHighResImage(canvasSize)}
+          onClick={() => downloadHighResImage(currentCanvasSize)}
           style={{ marginLeft: "10px" }}
         />
       </div>
