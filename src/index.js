@@ -21,6 +21,7 @@ import { SketchPicker } from "react-color";
 import "@blueprintjs/core/lib/css/blueprint.css";
 
 import { createStore } from "polotno/model/store";
+import { unstable_registerShapeModel, setTransformerStyle, unstable_setSnapFilterFunc } from 'polotno/config';
 
 // Define DPI constant (300 is standard print quality)
 const DPI = 72;
@@ -40,10 +41,39 @@ const updateBackBorderSize = (borderWidthInches) => {
   return borderWidthInches / 3 * DPI;
 };
 
+// Configure transformer style to make resizing more visible and disable cropping behavior
+setTransformerStyle({
+  anchorStroke: '#1a88ff', // Make anchors more visible with blue color
+  anchorStrokeWidth: 2,
+  borderStroke: '#1a88ff',
+  borderStrokeWidth: 2,
+  borderDash: [], // Solid line instead of dashed
+  // These settings help ensure resizing handles are clearly visible
+  rotateAnchorOffset: 25,
+  // Enable all 8 resize handles
+  enabledAnchors: [
+    'top-left',
+    'top-center',
+    'top-right',
+    'middle-right',
+    'middle-left',
+    'bottom-left',
+    'bottom-center',
+    'bottom-right'
+  ],
+  // Make middle handles more visible
+  anchorCornerRadius: 5,
+  anchorFill: '#ffffff',
+  // Ensure all handles are clickable
+  anchorSize: 12,
+  // Make sure middle handles are properly positioned
+  padding: 5
+});
+
 // Define canvas sizes in inches and convert to pixels for the INNER area
 const CANVAS_SIZES = {
-  "8x10":  { width: 8  * DPI, height: 10 * DPI },
-  "9x9":   { width: 9  * DPI, height: 9  * DPI },
+  "8x10": { width: 8 * DPI, height: 10 * DPI },
+  "9x9": { width: 9 * DPI, height: 9 * DPI },
   "12x12": { width: 12 * DPI, height: 12 * DPI },
   "10x16": { width: 10 * DPI, height: 16 * DPI },
   "14x14": { width: 14 * DPI, height: 14 * DPI },
@@ -76,7 +106,7 @@ const getTotalSizeWithBack = (innerSize) => {
 const totalDefaultSize = getTotalSizeWithBack(CANVAS_SIZES[DEFAULT_SIZE]);
 
 const store = createStore({
-  key: "nFA5H9elEytDyPyvKL7T", // Replace with your Polotno key
+  key: "j9xn_MFGfG0fJpLOeYeD1", // Replace with your Polotno key
   showCredit: true,
   width: totalDefaultSize.width,
   height: totalDefaultSize.height,
@@ -135,6 +165,8 @@ const imageWrapElement = page.addElement({
 // Update PADDING to use the new border width constant
 let PADDING = BORDER_WIDTH_PIXELS;
 
+// Disable crop on double-click for images
+
 async function generateMirrorWrap() {
   // First check if borderElement is defined
   if (!borderElement) {
@@ -160,19 +192,23 @@ async function generateMirrorWrap() {
     const img = new Image();
     img.onload = () => resolve(img);
     img.src = content;
+    img.stretchEnabled = true;
   });
 
-  // Create a "cropped" inner canvas of size (width - 2*PADDING) x (height - 2*PADDING)
+  // Increase the mirror area by reducing the inner content size
+  const mirrorPadding = PADDING * 1.5; // Increase padding by 50% to get more mirror area
+
+  // Create a "cropped" inner canvas with increased padding
   const innerContent = document.createElement("canvas");
-  innerContent.width = store.width - 2 * PADDING;
-  innerContent.height = store.height - 2 * PADDING;
+  innerContent.width = store.width - 2 * mirrorPadding;
+  innerContent.height = store.height - 2 * mirrorPadding;
   const innerCtx = innerContent.getContext("2d");
-  
+
   // Calculate offsets based on the back border
   const backOffset = BACK_BORDER_PIXELS;
-  
+
   // Draw the full image offset so only the center region appears in innerContent
-  innerCtx.drawImage(imageContent, -PADDING, -PADDING);
+  innerCtx.drawImage(imageContent, -mirrorPadding, -mirrorPadding);
 
   // Create final canvas covering the entire area (including the padded mirror regions)
   const canvas = document.createElement("canvas");
@@ -181,7 +217,7 @@ async function generateMirrorWrap() {
   const ctx = canvas.getContext("2d");
 
   // 1. Draw the main (non-mirrored) center region
-  ctx.drawImage(innerContent, PADDING, PADDING);
+  ctx.drawImage(innerContent, mirrorPadding, mirrorPadding);
 
   /*
    * Below are the eight mirrored regions around the center.
@@ -191,59 +227,56 @@ async function generateMirrorWrap() {
 
   // 2. Top-left corner (mirrored horizontally & vertically)
   ctx.save();
-  ctx.translate(PADDING, PADDING);
+  ctx.translate(mirrorPadding, mirrorPadding);
   ctx.scale(-1, -1);
   ctx.drawImage(innerContent, 0, 0);
   ctx.restore();
 
   // 3. Top-center (mirrored vertically only)
   ctx.save();
-  ctx.translate(PADDING, PADDING);
+  ctx.translate(mirrorPadding, mirrorPadding);
   ctx.scale(1, -1);
   ctx.drawImage(innerContent, 0, 0);
   ctx.restore();
 
   // 4. Top-right corner (mirrored horizontally & vertically)
   ctx.save();
-  // Move to the right edge so the rightmost corner lines up
-  ctx.translate(canvas.width - PADDING, PADDING);
-  // Flip horizontally (-1) and vertically (-1)
+  ctx.translate(canvas.width - mirrorPadding, mirrorPadding);
   ctx.scale(-1, -1);
-  // Shift drawing by -innerContent.width so the mirror is flush on the right
   ctx.drawImage(innerContent, -innerContent.width, 0);
   ctx.restore();
 
   // 5. Middle-left (mirrored horizontally only)
   ctx.save();
-  ctx.translate(PADDING, PADDING);
+  ctx.translate(mirrorPadding, mirrorPadding);
   ctx.scale(-1, 1);
   ctx.drawImage(innerContent, 0, 0);
   ctx.restore();
 
   // 6. Middle-right (mirrored horizontally only)
   ctx.save();
-  ctx.translate(canvas.width - PADDING, PADDING);
+  ctx.translate(canvas.width - mirrorPadding, mirrorPadding);
   ctx.scale(-1, 1);
   ctx.drawImage(innerContent, -innerContent.width, 0);
   ctx.restore();
 
   // 7. Bottom-left (mirrored horizontally & vertically)
   ctx.save();
-  ctx.translate(PADDING, canvas.height - PADDING);
+  ctx.translate(mirrorPadding, canvas.height - mirrorPadding);
   ctx.scale(-1, -1);
   ctx.drawImage(innerContent, 0, -innerContent.height);
   ctx.restore();
 
   // 8. Bottom-center (mirrored vertically only)
   ctx.save();
-  ctx.translate(PADDING, canvas.height - PADDING);
+  ctx.translate(mirrorPadding, canvas.height - mirrorPadding);
   ctx.scale(1, -1);
   ctx.drawImage(innerContent, 0, -innerContent.height);
   ctx.restore();
 
   // 9. Bottom-right (mirrored horizontally & vertically)
   ctx.save();
-  ctx.translate(canvas.width - PADDING, canvas.height - PADDING);
+  ctx.translate(canvas.width - mirrorPadding, canvas.height - mirrorPadding);
   ctx.scale(-1, -1);
   ctx.drawImage(innerContent, -innerContent.width, -innerContent.height);
   ctx.restore();
@@ -277,12 +310,12 @@ async function generateMirrorWrap() {
   ctx.textBaseline = 'middle';
 
   // Top side
-  ctx.fillText('Sides', canvas.width / 2, (PADDING + backOffset * 3 ) / 2);
-  
+  ctx.fillText('Sides', canvas.width / 2, (PADDING + backOffset * 3) / 2);
+
   // Add "Back" text labels - smaller than "Sides"
   const backFontSize = Math.max(9, Math.round(DPI / 8));
   ctx.font = `${backFontSize}px Arial`;
-  
+
   // Top back label
   ctx.fillText('Back', canvas.width / 2, backOffset / 2);
   // Left back label
@@ -318,7 +351,7 @@ const applyBorder = (color, width) => {
   // Calculate border width in inches and back border size
   const borderWidthInches = borderWidth / DPI;
   const backBorderPixels = updateBackBorderSize(borderWidthInches);
-  
+
   const canvas = document.createElement("canvas");
   canvas.width = store.width;
   canvas.height = store.height;
@@ -326,7 +359,7 @@ const applyBorder = (color, width) => {
 
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
+
   // Clear the inner rectangle (leave border)
   ctx.clearRect(
     borderWidth + backBorderPixels,
@@ -369,7 +402,7 @@ async function applyImageWrap() {
     store.width - (PADDING + BACK_BORDER_PIXELS) * 2,
     store.height - (PADDING + BACK_BORDER_PIXELS) * 2
   );
-  
+
   // Draw outer "Back" border
   ctx.lineWidth = Math.max(1, Math.round(ctx.lineWidth * 0.8)); // Slightly thinner line
   ctx.setLineDash([3, 3]); // Smaller dashed line
@@ -379,18 +412,18 @@ async function applyImageWrap() {
     store.width - BACK_BORDER_PIXELS * 2,
     store.height - BACK_BORDER_PIXELS * 2
   );
-  
+
   // Add "Sides" text
   ctx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
   ctx.fillStyle = 'black';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('Sides', canvas.width / 2, (PADDING + BACK_BORDER_PIXELS * 3) / 2);
-  
+
   // Add "Back" text labels - smaller than "Sides"
   const backFontSize = Math.max(9, Math.round(DPI / 8));
   ctx.font = `${backFontSize}px Arial`;
-  
+
   // Top back label
   ctx.fillText('Back', canvas.width / 2, BACK_BORDER_PIXELS / 2);
   // Left back label
@@ -426,6 +459,7 @@ async function applyBlurOverlay() {
     const img = new Image();
     img.onload = () => resolve(img);
     img.src = content;
+    img.stretchEnabled = true;
   });
 
   // Draw the full image
@@ -435,27 +469,27 @@ async function applyBlurOverlay() {
   ctx.filter = 'blur(7px)';
   ctx.drawImage(imageContent, 0, 0);
   ctx.filter = 'none';
-  
+
   // Add text with DPI-adjusted font size for Sides
   ctx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
   ctx.fillStyle = 'black';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText("Side", canvas.width / 2, canvas.height / 2);
-  
+
   // Add "Back" text labels - smaller font
   const backFontSize = Math.max(9, Math.round(DPI / 8));
   ctx.font = `${backFontSize}px Arial`;
-  
+
   // Back text labels
   ctx.fillText('Back', canvas.width / 2, BACK_BORDER_PIXELS / 2); // top
-  
+
   // Left back label
   ctx.save();
   ctx.translate(BACK_BORDER_PIXELS / 2, canvas.height / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.restore();
-  
+
   // Right back label
   ctx.save();
   ctx.translate(canvas.width - BACK_BORDER_PIXELS / 2, canvas.height / 2);
@@ -484,7 +518,7 @@ async function applyBlurOverlay() {
 const resizeCanvas = (newSizeKey, currentBorderColor, currentBorderWidth) => {
   console.log(`Resizing canvas to: ${newSizeKey}`);
   const innerSize = CANVAS_SIZES[newSizeKey];
-  
+
   if (!innerSize) {
     console.error(`Size "${newSizeKey}" not found in CANVAS_SIZES`);
     return;
@@ -546,11 +580,11 @@ const resizeCanvas = (newSizeKey, currentBorderColor, currentBorderWidth) => {
   if (mirrorWrap.visible) {
     setTimeout(() => generateMirrorWrap().then(url => mirrorWrap.set({ src: url })), 100);
   }
-  
+
   if (borderElement.visible) {
     setTimeout(() => applyBorder(borderColorToUse, borderWidthToUse), 100);
   }
-  
+
   if (imageWrapElement.visible) {
     setTimeout(() => applyImageWrap(), 100);
   }
@@ -616,7 +650,7 @@ store.on("change", () => {
 const downloadHighResImage = async (currentCanvasSize) => {
   // Get the current border color from the borderElement if visible
   let currentBorderColor = DEFAULT_BORDER_COLOR;
-  
+
   // If the border element is visible, try to extract its current color
   if (borderElement && borderElement.visible) {
     try {
@@ -625,16 +659,17 @@ const downloadHighResImage = async (currentCanvasSize) => {
       tempCanvas.width = 10;
       tempCanvas.height = 10;
       const tempCtx = tempCanvas.getContext("2d");
-      
+
       // Draw border element to the temp canvas
       const img = await new Promise((resolve) => {
         const image = new Image();
         image.onload = () => resolve(image);
         image.src = borderElement.src;
+        img.stretchEnabled = true;
       });
-      
+
       tempCtx.drawImage(img, 0, 0, 10, 10);
-      
+
       // Get pixel data from border (assuming top-left pixel has the border color)
       const pixelData = tempCtx.getImageData(0, 0, 1, 1).data;
       currentBorderColor = `rgb(${pixelData[0]}, ${pixelData[1]}, ${pixelData[2]})`;
@@ -644,62 +679,63 @@ const downloadHighResImage = async (currentCanvasSize) => {
       currentBorderColor = DEFAULT_BORDER_COLOR;
     }
   }
-  
+
   // Store current visibility states
   const mirrorVisible = mirrorWrap.visible;
   const borderVisible = borderElement.visible;
   const blurVisible = blurOverlay.visible;
   const imageWrapVisible = imageWrapElement.visible;
-  
+
   // Hide all overlays temporarily
   skipChange = true;
   mirrorWrap.set({ visible: false });
   borderElement.set({ visible: false });
   blurOverlay.set({ visible: false });
   imageWrapElement.set({ visible: false });
-  
+
   try {
     // Get current canvas size info
     const currentSize = Object.entries(CANVAS_SIZES).find(
       ([key]) => key === currentCanvasSize
     )[1];
-    
+
     // Calculate scale factor between current DPI and high-res DPI
     const scaleFactor = HIGH_RES_DPI / DPI;
-    
+
     // Calculate dimensions including borders
     const totalWidth = currentSize.width + 2 * BORDER_WIDTH_PIXELS + 2 * BACK_BORDER_PIXELS;
     const totalHeight = currentSize.height + 2 * BORDER_WIDTH_PIXELS + 2 * BACK_BORDER_PIXELS;
-    
+
     // Create high-res canvas with full dimensions (including borders and back)
     const highResCanvas = document.createElement("canvas");
     highResCanvas.width = totalWidth * scaleFactor;
     highResCanvas.height = totalHeight * scaleFactor;
     const highResCtx = highResCanvas.getContext("2d");
-    
+
     // Scale everything for high-res output
     highResCtx.scale(scaleFactor, scaleFactor);
-    
+
     // Get current canvas content
     const content = await store.toDataURL();
     const img = await new Promise((resolve) => {
       const image = new Image();
       image.onload = () => resolve(image);
       image.src = content;
-    });
-    
+      img.stretchEnabled = true;
+
+    })
     // Draw the entire image first
     highResCtx.drawImage(img, 0, 0, totalWidth, totalHeight);
-    
+
     // Calculate line widths and positions based on DPI scaling
     const backBorderPixels = updateBackBorderSize(BORDER_WIDTH_INCHES);
-    
+
     // If we have a border, redraw it in the correct color
     if (borderVisible) {
       // Create solid border
       highResCtx.fillStyle = currentBorderColor;
       highResCtx.fillRect(0, 0, totalWidth, totalHeight);
-      
+
       // Clear the inner rectangle
       highResCtx.clearRect(
         BORDER_WIDTH_PIXELS + backBorderPixels,
@@ -708,12 +744,12 @@ const downloadHighResImage = async (currentCanvasSize) => {
         totalHeight - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels)
       );
     }
-    
+
     // Draw dashed lines for borders (sides area)
     highResCtx.strokeStyle = 'white';
     highResCtx.lineWidth = 2;
     highResCtx.setLineDash([5, 5]); // Create dashed line
-    
+
     // Draw the inner border (sides area)
     highResCtx.strokeRect(
       BORDER_WIDTH_PIXELS + backBorderPixels,
@@ -721,7 +757,7 @@ const downloadHighResImage = async (currentCanvasSize) => {
       totalWidth - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels),
       totalHeight - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels)
     );
-    
+
     // Draw outer "Back" border
     highResCtx.lineWidth = Math.max(1, Math.round(highResCtx.lineWidth * 0.8)); // Slightly thinner line
     highResCtx.setLineDash([3, 3]); // Smaller dashed line
@@ -731,21 +767,21 @@ const downloadHighResImage = async (currentCanvasSize) => {
       totalWidth - 2 * backBorderPixels,
       totalHeight - 2 * backBorderPixels
     );
-    
+
     // Add "Sides" text label
     highResCtx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
     highResCtx.fillStyle = 'white';
     highResCtx.textAlign = 'center';
     highResCtx.textBaseline = 'middle';
     highResCtx.fillText('Sides', totalWidth / 2, (BORDER_WIDTH_PIXELS + backBorderPixels * 3) / 2);
-    
+
     // Add "Back" text labels - smaller than "Sides"
     const backFontSize = Math.max(9, Math.round(DPI / 8));
     highResCtx.font = `${backFontSize}px Arial`;
-    
+
     // Top back label
     highResCtx.fillText('Back', totalWidth / 2, backBorderPixels / 2);
-    
+
     // Create download link
     const link = document.createElement("a");
     link.download = `canvas-image-300dpi.png`;
@@ -772,7 +808,73 @@ const CustomToolbar = ({ store }) => {
   const [selectedOption, setSelectedOption] = useState("none");
   const [canvasSize, setCanvasSize] = useState(DEFAULT_SIZE);
   const [isUploading, setIsUploading] = useState(false);
+  
+  store.on("change", () => {
+    store.find((item) => {
+      if (item.type === "image") {
 
+        // Skip overlay elements
+        if (item === borderElement || item === mirrorWrap || item === imageWrapElement || item === blurOverlay) {
+          return;
+        }
+
+        // Get current border dimensions
+        const borderWidth = BORDER_WIDTH_PIXELS;
+        const backBorderWidth = BACK_BORDER_PIXELS;
+        const totalBorderWidth = borderWidth + backBorderWidth;
+
+        // // Different behavior based on selected effect
+        if (selectedOption === "mirror" || selectedOption === "border") {
+        item.set({
+          stretchEnabled: true,
+          draggable:true
+        });
+          // For mirror wrap: Allow resizing from border outward
+          if (item.x > totalBorderWidth) {
+            item.set({ x: totalBorderWidth });
+          }
+          if (item.y > totalBorderWidth) {
+            item.set({ y: totalBorderWidth });
+          }
+
+          // Ensure minimum width and height cover the inner canvas
+          const minWidth = item.page.computedWidth - (2 * totalBorderWidth);
+          const minHeight = item.page.computedHeight - (2 * totalBorderWidth);
+
+          if (item.width < minWidth) {
+            item.set({ width: minWidth });
+          }
+          if (item.height < minHeight) {
+            item.set({ height: minHeight });
+          }
+        } else if (selectedOption === "imageWrap") {
+          item.set({
+            stretchEnabled: true,
+          });
+          if (item.x > 0) {
+            item.set({
+              x: -Math.random(),
+            });
+          }
+          if (item.y > 0) {
+            item.set({
+              y: -Math.random(),
+            });
+          }
+          if (item.width < item.page.computedWidth - item.x) {
+            item.set({
+              width: item.page.computedWidth - item.x,
+            });
+          }
+          if (item.height < item.page.computedHeight - item.y) {
+            item.set({
+              height: item.page.computedHeight - item.y,
+            });
+          }
+        }
+      }
+    });
+  });
   // Update global currentCanvasSize whenever local state changes
   useEffect(() => {
     currentCanvasSize = canvasSize;
@@ -784,7 +886,7 @@ const CustomToolbar = ({ store }) => {
     if (!file) return;
 
     setIsUploading(true);
-    
+
     const reader = new FileReader();
     reader.onload = (event) => {
       // Create a temporary image to get dimensions
@@ -792,63 +894,147 @@ const CustomToolbar = ({ store }) => {
       tempImg.onload = () => {
         // Find all image elements that are not overlays
         const imageElements = page.children.filter(
-          el => el.type === 'image' && 
-          el !== borderElement && 
-          el !== mirrorWrap && 
-          el !== imageWrapElement && 
-          el !== blurOverlay
+          el => el.type === 'image' &&
+            el !== borderElement &&
+            el !== mirrorWrap &&
+            el !== imageWrapElement &&
+            el !== blurOverlay
         );
-        
-        // Calculate the available area for the image (inside borders)
-        const innerWidth = store.width - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS);
-        const innerHeight = store.height - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS);
-        
+        tempImg.stretchEnabled = true;
+
+        // Make image fill the entire page area including borders
+        // We'll position it at 0,0 and use the entire store dimensions
         if (imageElements.length > 0) {
           // Replace the first image element with the uploaded image
           const mainImage = imageElements[0];
+
+          // Set position to top left corner of the page
+          mainImage.set({
+            x: 0,
+            y: 0,
+            width: store.width,
+            height: store.height,
+            opacity: 1
+          });
+
+          // Then set the source and stretch mode
           mainImage.set({
             src: event.target.result,
-            x: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-            y: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-            width: innerWidth,
-            height: innerHeight,
-            // Make sure image is stretched to fill the space without cropping
-            stretchMode: 'stretch' // Options: stretch, cover, contain, repeat
+            // Force full stretching with no concern for distortion
+            stretchMode: 'fill',
+            objectFit: 'fill',
+            disableAutoResize: true,
+            crop: null,
+            cropEnabled: false,
+            // Allow for completely free manual stretching
+            selectable: true,
+            draggable: true,
+            transformEnabled: true,
+            keepRatio: false,
+            // Ensure all handles are visible and functional
+            transformerConfig: {
+              enabledAnchors: [
+                'top-left',
+                'top-center',
+                'top-right',
+                'middle-right',
+                'middle-left',
+                'bottom-left',
+                'bottom-center',
+                'bottom-right'
+              ],
+              rotateEnabled: false, // Disable rotation to focus on stretching
+              // Disable any cropping behavior
+              cropEnabled: false,
+              // Allow free transformation
+              boundBoxFunc: (oldBox, newBox) => newBox,
+              // Ensure handles are always visible
+              anchorSize: 12,
+              anchorStroke: '#1a88ff',
+              anchorFill: '#ffffff',
+              anchorCornerRadius: 5
+            }
           });
+
+          // Select the image so user can see resize handles
+          store.selectElements([mainImage]);
         } else {
           // If no image element found, create a new one
-          page.addElement({
+          const newImage = page.addElement({
             type: "image",
             src: event.target.result,
-            x: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-            y: BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-            width: innerWidth,
-            height: innerHeight,
-            stretchMode: 'stretch'
+            x: 0,
+            y: 0,
+            width: store.width,
+            height: store.height,
+            opacity: 1,
+            // Force full stretching with no concern for distortion
+            stretchMode: 'fill',
+            objectFit: 'fill',
+            disableAutoResize: true,
+            crop: null,
+            cropEnabled: false,
+            // Allow for completely free manual stretching
+            selectable: true,
+            draggable: true,
+            transformEnabled: true,
+            keepRatio: false,
+            // Ensure all handles are visible and functional
+            transformerConfig: {
+              enabledAnchors: [
+                'top-left',
+                'top-center',
+                'top-right',
+                'middle-right',
+                'middle-left',
+                'bottom-left',
+                'bottom-center',
+                'bottom-right'
+              ],
+              rotateEnabled: false, // Disable rotation to focus on stretching
+              // Disable any cropping behavior
+              cropEnabled: false,
+              // Allow free transformation
+              boundBoxFunc: (oldBox, newBox) => newBox,
+              // Ensure handles are always visible
+              anchorSize: 12,
+              anchorStroke: '#1a88ff',
+              anchorFill: '#ffffff',
+              anchorCornerRadius: 5
+            }
           });
+
+          // If needed, move the element to the bottom of the stack using proper API
+          // instead of setting zIndex directly
+          if (page.children.length > 1) {
+            page.moveBottom(newImage);
+          }
+
+          // Select the new image
+          store.selectElements([newImage]);
         }
-        
+
         // Update effects if active
         if (mirrorWrap.visible) {
           setTimeout(() => {
             generateMirrorWrap().then((url) => {
               mirrorWrap.set({ src: url });
             });
-          }, 100);
+          }, 300);
         }
-        
+
         if (imageWrapElement.visible) {
           setTimeout(() => {
             applyImageWrap();
             applyBlurOverlay();
-          }, 100);
+          }, 300);
         }
-        
+
         setIsUploading(false);
       };
       tempImg.src = event.target.result;
     };
-    
+
     reader.readAsDataURL(file);
   };
 
@@ -895,11 +1081,11 @@ const CustomToolbar = ({ store }) => {
   const handleWidthChange = (value) => {
     const width = Math.max(1, Math.min(200, value));
     setBorderWidth(width);
-    
+
     // Update border width in inches
     const newBorderWidthInches = width / DPI;
     setBorderWidthInches(newBorderWidthInches);
-    
+
     if (selectedOption === "border") {
       skipChange = true;
       applyBorder(borderColor, width);
@@ -912,17 +1098,17 @@ const CustomToolbar = ({ store }) => {
     setBorderWidthInches(widthInches);
     const widthPixels = widthInches * DPI;
     setBorderWidth(widthPixels);
-    
+
     // Update global variables that affect all effects
     BORDER_WIDTH_PIXELS = widthPixels;
     PADDING = widthPixels;
     BACK_BORDER_PIXELS = updateBackBorderSize(widthInches);
-    
+
     // Update back border size based on the new border width
     const backBorderPixels = BACK_BORDER_PIXELS;
-    
+
     skipChange = true;
-    
+
     // Apply changes based on current selected option
     if (selectedOption === "border") {
       // Redraw the border with new dimensions
@@ -933,7 +1119,7 @@ const CustomToolbar = ({ store }) => {
 
       ctx.fillStyle = borderColor;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
+
       ctx.clearRect(
         widthPixels + backBorderPixels,
         widthPixels + backBorderPixels,
@@ -961,13 +1147,13 @@ const CustomToolbar = ({ store }) => {
       applyImageWrap();
       applyBlurOverlay();
     }
-    
+
     skipChange = false;
   };
 
   const handleSizeChange = (e) => {
     const newSize = e.target.value;
-    console.log("Selected size:", newSize); 
+    console.log("Selected size:", newSize);
     setCanvasSize(newSize);
 
     skipChange = true;
@@ -1040,7 +1226,7 @@ const CustomToolbar = ({ store }) => {
           <Radio label="Solid Border" value="border" />
           <Radio label="Image Wrap" value="imageWrap" />
         </RadioGroup>
-        
+
         <div
           style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}
         >
@@ -1059,7 +1245,7 @@ const CustomToolbar = ({ store }) => {
             <Radio label="20 × 20" value="20x20" />
           </RadioGroup>
         </div>
-        
+
         {selectedOption !== "none" && (
           <div
             style={{
@@ -1095,7 +1281,7 @@ const CustomToolbar = ({ store }) => {
                 />
               </Popover>
             )}
-            
+
             <RadioGroup
               inline
               onChange={handleBorderWidthInchesChange}
@@ -1126,15 +1312,53 @@ export const App = ({ store }) => {
       </SidePanelWrap>
       <WorkspaceWrap>
         <CustomToolbar store={store} />
-        <Workspace 
-          store={store} 
+        <Workspace
+          store={store}
           components={{
             ContextMenu: () => null, // Disable right-click context menu
             PageControls: () => null, // Disable page controls
           }}
           altCloneEnabled={false} // Disable alt+drag to clone
-          disableAddLayer={true} // Disable add layer feature
+          disableAddLayer={false} // Enable add layer feature to allow transformations
           disablePageControls={true} // Disable page controls
+          disableCrop={true} // Disable crop functionality entirely
+          imageCropEnabled={false} // Disable crop mode for images
+          backgroundCropEnabled={false} // Disable crop for background images too
+          onDoubleClick={(e, store) => {
+            const { selectedElements } = store;
+            if (selectedElements.length === 1 && selectedElements[0].type === 'image') {
+              const image = selectedElements[0];
+              // Enable transformation mode
+              image.set({
+                transformEnabled: true,
+                selectable: true,
+                draggable: true,
+                transformerConfig: {
+                  enabledAnchors: [
+                    'top-left',
+                    'top-center',
+                    'top-right',
+                    'middle-right',
+                    'middle-left',
+                    'bottom-left',
+                    'bottom-center',
+                    'bottom-right'
+                  ],
+                  rotateEnabled: false,
+                  cropEnabled: false,
+                  boundBoxFunc: (oldBox, newBox) => newBox,
+                  anchorSize: 12,
+                  anchorStroke: '#1a88ff',
+                  anchorFill: '#ffffff',
+                  anchorCornerRadius: 5
+                }
+              });
+              // Keep the image selected
+              store.selectElements([image]);
+              return false; // Prevent default double-click behavior
+            }
+            return true; // Allow default for non-selected areas
+          }}
         />
         <ZoomButtons store={store} />
       </WorkspaceWrap>
