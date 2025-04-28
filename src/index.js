@@ -23,6 +23,7 @@ import "@blueprintjs/core/lib/css/blueprint.css";
 import { createStore } from "polotno/model/store";
 import { unstable_registerShapeModel, setTransformerStyle, unstable_setSnapFilterFunc } from 'polotno/config';
 
+let forCanvasSelectedOption= "none"
 // Define DPI constant (300 is standard print quality)
 const DPI = 72;
 const HIGH_RES_DPI = 300; // Add high resolution DPI constant
@@ -822,9 +823,9 @@ const CustomToolbar = ({ store }) => {
         const borderWidth = BORDER_WIDTH_PIXELS;
         const backBorderWidth = BACK_BORDER_PIXELS;
         const totalBorderWidth = borderWidth + backBorderWidth;
-
+        console.log(forCanvasSelectedOption);
         // // Different behavior based on selected effect
-        if (selectedOption === "mirror" || selectedOption === "border") {
+        if (forCanvasSelectedOption === "mirror" || forCanvasSelectedOption === "border") {
         item.set({
           stretchEnabled: true,
           draggable:true
@@ -847,7 +848,7 @@ const CustomToolbar = ({ store }) => {
           if (item.height < minHeight) {
             item.set({ height: minHeight });
           }
-        } else if (selectedOption === "imageWrap") {
+        } else if (forCanvasSelectedOption === "imageWrap") {
           item.set({
             stretchEnabled: true,
           });
@@ -1041,6 +1042,7 @@ const CustomToolbar = ({ store }) => {
   const handleOptionChange = (e) => {
     const newOption = e.target.value;
     setSelectedOption(newOption);
+    forCanvasSelectedOption=newOption;
 
     skipChange = true; // Prevent store.on("change") from interfering
     mirrorWrap.set({ visible: false });
