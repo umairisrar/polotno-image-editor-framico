@@ -23,7 +23,7 @@ import "@blueprintjs/core/lib/css/blueprint.css";
 import { createStore } from "polotno/model/store";
 import { unstable_registerShapeModel, setTransformerStyle, unstable_setSnapFilterFunc } from 'polotno/config';
 
-let forCanvasSelectedOption= "none"
+let forCanvasSelectedOption = "none"
 // Define DPI constant (300 is standard print quality)
 const DPI = 72;
 const HIGH_RES_DPI = 300; // Add high resolution DPI constant
@@ -809,7 +809,7 @@ const CustomToolbar = ({ store }) => {
   const [selectedOption, setSelectedOption] = useState("none");
   const [canvasSize, setCanvasSize] = useState(DEFAULT_SIZE);
   const [isUploading, setIsUploading] = useState(false);
-  
+
   store.on("change", () => {
     store.find((item) => {
       if (item.type === "image") {
@@ -823,31 +823,33 @@ const CustomToolbar = ({ store }) => {
         const borderWidth = BORDER_WIDTH_PIXELS;
         const backBorderWidth = BACK_BORDER_PIXELS;
         const totalBorderWidth = borderWidth + backBorderWidth;
-        console.log(forCanvasSelectedOption);
         // // Different behavior based on selected effect
         if (forCanvasSelectedOption === "mirror" || forCanvasSelectedOption === "border") {
-        item.set({
-          stretchEnabled: true,
-          draggable:true
-        });
-          // For mirror wrap: Allow resizing from border outward
+          item.set({
+            stretchEnabled: true,
+            draggable: true
+          });
+
+          // For mirror wrap: Allow resizing from border outward and ensure image covers the entire canvas
           if (item.x > totalBorderWidth) {
-            item.set({ x: totalBorderWidth });
+            item.set({ x: totalBorderWidth - Math.random() });
           }
           if (item.y > totalBorderWidth) {
-            item.set({ y: totalBorderWidth });
+            item.set({ y: totalBorderWidth - Math.random() });
           }
 
           // Ensure minimum width and height cover the inner canvas
-          const minWidth = item.page.computedWidth - (2 * totalBorderWidth);
-          const minHeight = item.page.computedHeight - (2 * totalBorderWidth);
+          const minWidth = item.page.computedWidth - totalBorderWidth - item.x;  
+          const minHeight = item.page.computedHeight - totalBorderWidth - item.x;
 
-          if (item.width < minWidth) {
-            item.set({ width: minWidth });
+          // Allow image to extend beyond minimum size when dragging, considering total border width
+          if (item.width < minWidth || item.x + item.width < item.page.computedWidth - totalBorderWidth) {
+            item.set({ width: Math.max(minWidth, item.page.computedWidth - item.x - totalBorderWidth) });
           }
-          if (item.height < minHeight) {
-            item.set({ height: minHeight });
+          if (item.height < minHeight || item.y + item.height < item.page.computedHeight - totalBorderWidth) {
+            item.set({ height: Math.max(minHeight, item.page.computedHeight - item.y - totalBorderWidth) });
           }
+          
         } else if (forCanvasSelectedOption === "imageWrap") {
           item.set({
             stretchEnabled: true,
@@ -1042,7 +1044,7 @@ const CustomToolbar = ({ store }) => {
   const handleOptionChange = (e) => {
     const newOption = e.target.value;
     setSelectedOption(newOption);
-    forCanvasSelectedOption=newOption;
+    forCanvasSelectedOption = newOption;
 
     skipChange = true; // Prevent store.on("change") from interfering
     mirrorWrap.set({ visible: false });
