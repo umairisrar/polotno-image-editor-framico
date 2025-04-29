@@ -647,53 +647,103 @@ store.on("change", () => {
   }
 });
 
-// Function to generate and download high-resolution image
-const downloadHighResImage = async (currentCanvasSize) => {
-  // Get the current border color from the borderElement if visible
-  let currentBorderColor = DEFAULT_BORDER_COLOR;
-
-  // If the border element is visible, try to extract its current color
-  if (borderElement && borderElement.visible) {
-    try {
-      // Create a temporary canvas to extract the border color
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = 10;
-      tempCanvas.height = 10;
-      const tempCtx = tempCanvas.getContext("2d");
-
-      // Draw border element to the temp canvas
-      const img = await new Promise((resolve) => {
-        const image = new Image();
-        image.onload = () => resolve(image);
-        image.src = borderElement.src;
-        img.stretchEnabled = true;
-      });
-
-      tempCtx.drawImage(img, 0, 0, 10, 10);
-
-      // Get pixel data from border (assuming top-left pixel has the border color)
-      const pixelData = tempCtx.getImageData(0, 0, 1, 1).data;
-      currentBorderColor = `rgb(${pixelData[0]}, ${pixelData[1]}, ${pixelData[2]})`;
-    } catch (error) {
-      console.error("Error extracting border color:", error);
-      // Fall back to default color
-      currentBorderColor = DEFAULT_BORDER_COLOR;
-    }
+async function generateMirrorWrapForDownload() {
+  // First check if borderElement is defined
+  if (!borderElement) {
+    console.error("borderElement is undefined");
+    return;
   }
 
-  // Store current visibility states
-  const mirrorVisible = mirrorWrap.visible;
-  const borderVisible = borderElement.visible;
-  const blurVisible = blurOverlay.visible;
-  const imageWrapVisible = imageWrapElement.visible;
+  // Convert the current 'store' content into an <img>
+  const content = await store.toDataURL();
+  const imageContent = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.src = content;
+    img.stretchEnabled = true;
+  });
 
-  // Hide all overlays temporarily
-  skipChange = true;
-  mirrorWrap.set({ visible: false });
-  borderElement.set({ visible: false });
-  blurOverlay.set({ visible: false });
-  imageWrapElement.set({ visible: false });
+  // Increase the mirror area by reducing the inner content size
+  const mirrorPadding = PADDING * 1.5; // Increase padding by 50% to get more mirror area
 
+  // Create a "cropped" inner canvas with increased padding
+  const innerContent = document.createElement("canvas");
+  innerContent.width = store.width - 2 * mirrorPadding;
+  innerContent.height = store.height - 2 * mirrorPadding;
+  const innerCtx = innerContent.getContext("2d");
+
+  // Draw the full image offset so only the center region appears in innerContent
+  innerCtx.drawImage(imageContent, -mirrorPadding, -mirrorPadding);
+
+  // Create final canvas covering the entire area (including the padded mirror regions)
+  const canvas = document.createElement("canvas");
+  canvas.width = store.width;
+  canvas.height = store.height;
+  const ctx = canvas.getContext("2d");
+
+  // 1. Draw the main (non-mirrored) center region
+  ctx.drawImage(innerContent, mirrorPadding, mirrorPadding);
+
+  // 2. Top-left corner (mirrored horizontally & vertically)
+  ctx.save();
+  ctx.translate(mirrorPadding, mirrorPadding);
+  ctx.scale(-1, -1);
+  ctx.drawImage(innerContent, 0, 0);
+  ctx.restore();
+
+  // 3. Top-center (mirrored vertically only)
+  ctx.save();
+  ctx.translate(mirrorPadding, mirrorPadding);
+  ctx.scale(1, -1);
+  ctx.drawImage(innerContent, 0, 0);
+  ctx.restore();
+
+  // 4. Top-right corner (mirrored horizontally & vertically)
+  ctx.save();
+  ctx.translate(canvas.width - mirrorPadding, mirrorPadding);
+  ctx.scale(-1, -1);
+  ctx.drawImage(innerContent, -innerContent.width, 0);
+  ctx.restore();
+
+  // 5. Middle-left (mirrored horizontally only)
+  ctx.save();
+  ctx.translate(mirrorPadding, mirrorPadding);
+  ctx.scale(-1, 1);
+  ctx.drawImage(innerContent, 0, 0);
+  ctx.restore();
+
+  // 6. Middle-right (mirrored horizontally only)
+  ctx.save();
+  ctx.translate(canvas.width - mirrorPadding, mirrorPadding);
+  ctx.scale(-1, 1);
+  ctx.drawImage(innerContent, -innerContent.width, 0);
+  ctx.restore();
+
+  // 7. Bottom-left (mirrored horizontally & vertically)
+  ctx.save();
+  ctx.translate(mirrorPadding, canvas.height - mirrorPadding);
+  ctx.scale(-1, -1);
+  ctx.drawImage(innerContent, 0, -innerContent.height);
+  ctx.restore();
+
+  // 8. Bottom-center (mirrored vertically only)
+  ctx.save();
+  ctx.translate(mirrorPadding, canvas.height - mirrorPadding);
+  ctx.scale(1, -1);
+  ctx.drawImage(innerContent, 0, -innerContent.height);
+  ctx.restore();
+
+  // 9. Bottom-right (mirrored horizontally & vertically)
+  ctx.save();
+  ctx.translate(canvas.width - mirrorPadding, canvas.height - mirrorPadding);
+  ctx.scale(-1, -1);
+  ctx.drawImage(innerContent, -innerContent.width, -innerContent.height);
+  ctx.restore();
+
+  return canvas.toDataURL();
+}
+
+const downloadHighResImage = async (currentCanvasSize) => {
   try {
     // Get current canvas size info
     const currentSize = Object.entries(CANVAS_SIZES).find(
@@ -716,72 +766,114 @@ const downloadHighResImage = async (currentCanvasSize) => {
     // Scale everything for high-res output
     highResCtx.scale(scaleFactor, scaleFactor);
 
-    // Get current canvas content
-    const content = await store.toDataURL();
-    const img = await new Promise((resolve) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.src = content;
-      img.stretchEnabled = true;
+    // Based on the selected effect, generate the appropriate content
+    if (mirrorWrap.visible) {
+      // Generate mirror wrap effect at high resolution without guide lines
+      const mirrorContent = await generateMirrorWrapForDownload();
+      const mirrorImage = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Failed to load mirror image'));
+        img.src = mirrorContent;
+      });
+      highResCtx.drawImage(mirrorImage, 0, 0, totalWidth, totalHeight);
+    } else if (borderElement.visible) {
+      // Get current canvas content first
+      const content = await store.toDataURL();
+      const mainImage = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = content;
+      });
 
-    })
-    // Draw the entire image first
-    highResCtx.drawImage(img, 0, 0, totalWidth, totalHeight);
+      // Draw the main image
+      highResCtx.drawImage(mainImage, 0, 0, totalWidth, totalHeight);
 
-    // Calculate line widths and positions based on DPI scaling
-    const backBorderPixels = updateBackBorderSize(BORDER_WIDTH_INCHES);
+      // Extract border color
+      let borderColor = DEFAULT_BORDER_COLOR;
+      try {
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = 10;
+        tempCanvas.height = 10;
+        const tempCtx = tempCanvas.getContext("2d");
 
-    // If we have a border, redraw it in the correct color
-    if (borderVisible) {
-      // Create solid border
-      highResCtx.fillStyle = currentBorderColor;
+        const borderImg = await new Promise((resolve) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.src = borderElement.src;
+        });
+
+        tempCtx.drawImage(borderImg, 0, 0, 10, 10);
+        const pixelData = tempCtx.getImageData(0, 0, 1, 1).data;
+        borderColor = `rgb(${pixelData[0]}, ${pixelData[1]}, ${pixelData[2]})`;
+      } catch (error) {
+        console.error("Error extracting border color:", error);
+      }
+
+      // Apply border
+      highResCtx.fillStyle = borderColor;
       highResCtx.fillRect(0, 0, totalWidth, totalHeight);
 
       // Clear the inner rectangle
       highResCtx.clearRect(
-        BORDER_WIDTH_PIXELS + backBorderPixels,
-        BORDER_WIDTH_PIXELS + backBorderPixels,
-        totalWidth - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels),
-        totalHeight - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels)
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS)
       );
+    } else if (imageWrapElement.visible) {
+      // Get current canvas content first
+      const content = await store.toDataURL();
+      const mainImage = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = content;
+      });
+
+      // Draw the main image
+      highResCtx.drawImage(mainImage, 0, 0, totalWidth, totalHeight);
+
+      // Apply blur to the border areas
+      highResCtx.save();
+      highResCtx.filter = 'blur(7px)';
+      
+      // Draw blurred image in the border areas
+      highResCtx.drawImage(mainImage, 0, 0, totalWidth, totalHeight);
+      
+      // Clear the center area
+      highResCtx.restore();
+      highResCtx.clearRect(
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS)
+      );
+
+      // Draw the unblurred center image
+      highResCtx.drawImage(
+        mainImage,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS)
+      );
+    } else {
+      // No effect selected, just draw the main image
+      const content = await store.toDataURL();
+      const mainImage = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = content;
+      });
+      highResCtx.drawImage(mainImage, 0, 0, totalWidth, totalHeight);
     }
-
-    // Draw dashed lines for borders (sides area)
-    highResCtx.strokeStyle = 'white';
-    highResCtx.lineWidth = 2;
-    highResCtx.setLineDash([5, 5]); // Create dashed line
-
-    // Draw the inner border (sides area)
-    highResCtx.strokeRect(
-      BORDER_WIDTH_PIXELS + backBorderPixels,
-      BORDER_WIDTH_PIXELS + backBorderPixels,
-      totalWidth - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels),
-      totalHeight - 2 * (BORDER_WIDTH_PIXELS + backBorderPixels)
-    );
-
-    // Draw outer "Back" border
-    highResCtx.lineWidth = Math.max(1, Math.round(highResCtx.lineWidth * 0.8)); // Slightly thinner line
-    highResCtx.setLineDash([3, 3]); // Smaller dashed line
-    highResCtx.strokeRect(
-      backBorderPixels,
-      backBorderPixels,
-      totalWidth - 2 * backBorderPixels,
-      totalHeight - 2 * backBorderPixels
-    );
-
-    // Add "Sides" text label
-    highResCtx.font = `${Math.max(12, Math.round(DPI / 6))}px Arial`;
-    highResCtx.fillStyle = 'white';
-    highResCtx.textAlign = 'center';
-    highResCtx.textBaseline = 'middle';
-    highResCtx.fillText('Sides', totalWidth / 2, (BORDER_WIDTH_PIXELS + backBorderPixels * 3) / 2);
-
-    // Add "Back" text labels - smaller than "Sides"
-    const backFontSize = Math.max(9, Math.round(DPI / 8));
-    highResCtx.font = `${backFontSize}px Arial`;
-
-    // Top back label
-    highResCtx.fillText('Back', totalWidth / 2, backBorderPixels / 2);
 
     // Create download link
     const link = document.createElement("a");
@@ -790,13 +882,6 @@ const downloadHighResImage = async (currentCanvasSize) => {
     link.click();
   } catch (error) {
     console.error("Error generating high-res image:", error);
-  } finally {
-    // Restore original visibility
-    mirrorWrap.set({ visible: mirrorVisible });
-    borderElement.set({ visible: borderVisible });
-    blurOverlay.set({ visible: blurVisible });
-    imageWrapElement.set({ visible: imageWrapVisible });
-    skipChange = false;
   }
 };
 
