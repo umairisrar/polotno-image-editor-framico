@@ -29,7 +29,7 @@ const DPI = 72;
 const HIGH_RES_DPI = 300; // Add high resolution DPI constant
 
 // Define border width in inches (will be updated dynamically through UI)
-const BORDER_WIDTH_INCHES = 0.75;
+let BORDER_WIDTH_INCHES = 0.75;
 let BORDER_WIDTH_PIXELS = BORDER_WIDTH_INCHES * DPI;
 const DEFAULT_BORDER_COLOR = "#000000"; // Default border color
 
@@ -787,7 +787,7 @@ const downloadHighResImage = async (currentCanvasSize) => {
         img.src = content;
       });
 
-      // Draw the main image
+      // Draw the main image first
       highResCtx.drawImage(mainImage, 0, 0, totalWidth, totalHeight);
 
       // Extract border color
@@ -811,12 +811,25 @@ const downloadHighResImage = async (currentCanvasSize) => {
         console.error("Error extracting border color:", error);
       }
 
-      // Apply border
+      // Draw border on top
       highResCtx.fillStyle = borderColor;
       highResCtx.fillRect(0, 0, totalWidth, totalHeight);
 
-      // Clear the inner rectangle
+      // Clear the inner rectangle to show the image
       highResCtx.clearRect(
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS)
+      );
+
+      // Draw the main image again in the cleared area
+      highResCtx.drawImage(
+        mainImage,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
+        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
+        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
         BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
         BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
         totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
@@ -1167,24 +1180,13 @@ const CustomToolbar = ({ store }) => {
     }
   };
 
-  const handleWidthChange = (value) => {
-    const width = Math.max(1, Math.min(200, value));
-    setBorderWidth(width);
 
-    // Update border width in inches
-    const newBorderWidthInches = width / DPI;
-    setBorderWidthInches(newBorderWidthInches);
-
-    if (selectedOption === "border") {
-      skipChange = true;
-      applyBorder(borderColor, width);
-      skipChange = false;
-    }
-  };
 
   const handleBorderWidthInchesChange = (e) => {
     const widthInches = parseFloat(e.target.value);
     setBorderWidthInches(widthInches);
+    BORDER_WIDTH_INCHES=widthInches;
+    BORDER_WIDTH_PIXELS=widthInches * DPI
     const widthPixels = widthInches * DPI;
     setBorderWidth(widthPixels);
 
@@ -1264,7 +1266,9 @@ const CustomToolbar = ({ store }) => {
       }
     }, 300);
   };
-
+useEffect(() => {
+  console.log('BORDER_WIDTH_INCHES',BORDER_WIDTH_INCHES)
+}, [borderWidthInches]);
   return (
     <div
       style={{
@@ -1387,6 +1391,8 @@ const CustomToolbar = ({ store }) => {
     </div>
   );
 };
+
+
 
 // Generate initial mirror wrap
 generateMirrorWrap().then((url) => {
