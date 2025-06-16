@@ -815,25 +815,31 @@ const downloadHighResImage = async (currentCanvasSize) => {
       highResCtx.fillStyle = borderColor;
       highResCtx.fillRect(0, 0, totalWidth, totalHeight);
 
-      // Clear the inner rectangle to show the image
+      // Calculate the inner area dimensions
+      const innerWidth = totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS);
+      const innerHeight = totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS);
+      const startX = BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS;
+      const startY = BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS;
+
+      // Clear the inner rectangle
       highResCtx.clearRect(
-        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
-        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS)
+        startX,
+        startY,
+        innerWidth,
+        innerHeight
       );
 
       // Draw the main image again in the cleared area
       highResCtx.drawImage(
         mainImage,
-        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
-        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
-        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-        BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS,
-        totalWidth - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS),
-        totalHeight - 2 * (BORDER_WIDTH_PIXELS + BACK_BORDER_PIXELS)
+        startX,
+        startY,
+        innerWidth,
+        innerHeight,
+        startX,
+        startY,
+        innerWidth,
+        innerHeight
       );
     } else if (imageWrapElement.visible) {
       // Get current canvas content first
